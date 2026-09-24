@@ -18,6 +18,7 @@ export class AudioEngine {
     comp.threshold.value = -12;
     comp.ratio.value = 8;
     this.master.connect(comp).connect(ctx.destination);
+    this.out = comp;
     this.noise = this.#noiseBuffer(3);
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.#impulse(2.6, 2.5);
@@ -26,6 +27,15 @@ export class AudioEngine {
     this.#heart();
     this.drone = drone(this);
     return ctx.resume();
+  }
+
+  // نسخة من صوت اللعبة كـ MediaStream (لتسجيل الفيديو)
+  tap() {
+    if (!this.tapNode) {
+      this.tapNode = this.ctx.createMediaStreamDestination();
+      this.out.connect(this.tapNode);
+    }
+    return this.tapNode.stream;
   }
 
   get now() {
@@ -445,8 +455,11 @@ export class AudioEngine {
     const synth = window.speechSynthesis;
     if (!synth) return;
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang === 'ar' ? 'ar-SA' : 'en-US';
-    const v = synth.getVoices().find((x) => x.lang?.startsWith(lang));
+    // lang ممكن تكون 'ar' أو لهجة محددة زي 'ar-EG': منفضّل صوت اللهجة إذا موجود
+    const base = lang.slice(0, 2);
+    u.lang = lang.includes('-') ? lang : base === 'ar' ? 'ar-SA' : 'en-US';
+    const voices = synth.getVoices();
+    const v = voices.find((x) => x.lang === u.lang) || voices.find((x) => x.lang?.startsWith(base));
     if (v) u.voice = v;
     u.pitch = pitch;
     u.rate = rate;

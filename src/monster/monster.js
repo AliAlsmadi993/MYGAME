@@ -149,6 +149,7 @@ export class Monster {
   update(dt, player, ctx) {
     this.t += dt;
     this.timer += dt;
+    this.singBoost = Math.max(0, (this.singBoost ?? 0) - dt);
     this.hour = ctx.hour;
     const sees = this.canSee(player);
 
@@ -365,7 +366,7 @@ export class Monster {
     if (this.panner) {
       this.audio.movePanner(this.panner, { x: this.pos.x, y: 2.2, z: this.pos.z });
       // بتغني وهي تتجوّل، وبتسكت لما تصيد
-      const singing = this.state === 'wander' || this.state === 'retreat';
+      const singing = this.state === 'wander' || this.state === 'retreat' || this.singBoost > 0;
       this.song.gain.setTargetAtTime(singing ? 0.8 : 0.05, this.audio.now, 0.4);
     }
   }

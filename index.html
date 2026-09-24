@@ -66,7 +66,14 @@
         <label>صوت السعلوة
           <select id="setVoice"><option value="ar">عربي</option><option value="en">English</option></select>
         </label>
+        <label>لهجتها
+          <select id="setDialect"><option value="levant">شامي</option><option value="gulf">خليجي</option><option value="iraq">عراقي</option><option value="egypt">مصري</option></select>
+        </label>
         <button id="btnRecalib" class="ghost">أعد معايرة المايك</button>
+        <h3>للستريمرز</h3>
+        <label><input type="checkbox" id="setClip" /> احفظ آخر لحظات من الليلة كفيديو (بيضل على جهازك)</label>
+        <label>تصويت جمهور تويتش — اسم القناة: <input type="text" id="setTwitch" placeholder="فاضي = مطفي، test = تجربة" dir="ltr" /></label>
+        <p class="small">الأوامر بالشات: !ضو (اطفي الكشاف) · !غني (خلّيها تغني) · !باب (سكّر باب) · !خوف (حدث مخيف). تصويت كل 40 ثانية.</p>
         <button id="btnWipeBook" class="ghost">امسح دفتر الجدة والإنجازات</button>
       </details>
 
@@ -121,6 +128,7 @@
       <div class="row">
         <button id="btnAgain" class="big">ليلة ثانية</button>
         <button id="btnShare">📸 شارك</button>
+        <a id="btnClip" class="hidden" download="salwa-last-moments.webm"><button>🎬 آخر لحظات (فيديو)</button></a>
         <button id="btnMenu" class="ghost">القائمة</button>
       </div>
     </section>
@@ -134,6 +142,7 @@
       </div>
       <div id="items"></div>
       <div id="bag"></div>
+      <div id="vote" class="hidden"></div>
       <div id="breath" class="hidden">🫁 حابس نفَسك…</div>
       <div id="hint"></div>
       <div id="dot"></div>

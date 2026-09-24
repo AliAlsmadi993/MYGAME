@@ -232,3 +232,39 @@ test('the upper floor connects through the liwan stairs and has its own rooms', 
   for (const g of GLASS) assert.ok(isWalkable(g.x, g.y), `glass ${g.x},${g.y}`);
   for (const s of HIDE_SPOTS) assert.equal(charAt(s.x, s.y), s.room, s.id);
 });
+
+test('every taunt exists in every dialect and dialect text is used', async () => {
+  const { DIALECTS, DIALECT_TAUNTS } = await import('../src/monster/dialects.js');
+  for (const d of Object.keys(DIALECTS)) {
+    if (d === 'levant') continue;
+    for (const t of TAUNTS) assert.ok(DIALECT_TAUNTS[d][t.id], `${d}: ${t.id}`);
+    assert.deepEqual(Object.keys(DIALECT_TAUNTS[d]).sort(), TAUNTS.map((t) => t.id).sort(), `${d} has no extra ids`);
+  }
+  const mem = M.emptyMemory();
+  mem.attempts = 12;
+  const ctx = { mem, run: { time: 10, screams: 0, heard: 0, hour: 0 }, dialect: 'egypt' };
+  const t = pickTaunt('start', ctx, new Set());
+  assert.equal(t.id, 'back_many');
+  assert.match(t.ar, /مش هتتعلّم/);
+  assert.match(t.ar, /12/);
+  assert.match(pickTaunt('start', { ...ctx, dialect: 'levant' }, new Set()).ar, /ما بتتعلّم/);
+});
+
+test('twitch chat parsing and audience votes', async () => {
+  const { parseIrc, Vote, commandOf, ACTIONS } = await import('../src/audience.js');
+  assert.deepEqual(parseIrc(':Sara!sara@sara.tmi.twitch.tv PRIVMSG #chan :!ضو يلا'), { user: 'sara', text: '!ضو يلا' });
+  assert.deepEqual(parseIrc('@badge-info=;color=#fff :omar!omar@omar.tmi.twitch.tv PRIVMSG #chan :!door'), { user: 'omar', text: '!door' });
+  assert.equal(parseIrc('PING :tmi.twitch.tv'), null);
+  assert.equal(commandOf('hello'), null);
+  assert.equal(commandOf('!SING'), 'sing');
+  const v = new Vote();
+  v.add('a', '!ضو');
+  v.add('b', '!غني');
+  v.add('c', '!غني');
+  v.add('a', '!غني'); // غيّر صوته
+  v.add('d', 'hi');
+  assert.deepEqual(v.tally(), { light: 0, sing: 3, door: 0, scare: 0 });
+  assert.equal(v.close(), 'sing');
+  assert.equal(v.close(), null);
+  for (const a of Object.values(ACTIONS)) assert.ok(commandOf(a.cmd));
+});

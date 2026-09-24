@@ -12,6 +12,8 @@ import { TAPES } from './story/tapes.js';
 import { ENDINGS } from './story/endings.js';
 import { TOOLS } from './inventory.js';
 import { ITEMS } from './world/map.js';
+import { Clipper } from './clipper.js';
+import { TwitchChat, ACTIONS } from './audience.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -46,6 +48,8 @@ let paused = false;
 let difficulty = 'normal';
 let night = 1;
 let lastEnd = null;
+let chat = null;
+const clipper = new Clipper(canvas, audio);
 const keys = {};
 
 // ---------- الواجهة ----------
@@ -91,6 +95,8 @@ const ui = {
     $('dot').style.display = h.hidden ? 'none' : '';
     $('hideMask').className = h.hidden ? ({ chest: 'blind', curtain: 'curtain', tank: 'tank' }[h.hidden] ?? '') : 'hidden';
     $('breath').classList.toggle('hidden', !h.breath);
+    $('vote').classList.toggle('hidden', !h.vote);
+    if (h.vote) $('vote').textContent = `🗳 ${Object.entries(h.vote.tally).map(([a, n]) => `${ACTIONS[a].cmd} ${n}`).join(' · ')} (${h.vote.left})`;
   },
   fade(on) {
     $('fade').classList.toggle('on', on);
@@ -124,6 +130,16 @@ const ui = {
     show('end');
     updateMemInfo();
     renderNights();
+    // آخر لحظات كفيديو
+    const clipBtn = $('btnClip');
+    if (clipBtn.href) URL.revokeObjectURL(clipBtn.href);
+    clipBtn.removeAttribute('href');
+    clipBtn.classList.add('hidden');
+    clipper.grab().then((blob) => {
+      if (!blob) return;
+      clipBtn.href = URL.createObjectURL(blob);
+      clipBtn.classList.remove('hidden');
+    });
   },
 };
 
@@ -284,6 +300,9 @@ bindSetting('setMicMeter', 'showMic');
 bindSetting('setStreamer', 'streamer');
 bindSetting('setMicGain', 'micGain', 'value', Number);
 bindSetting('setVoice', 'voiceLang', 'value');
+bindSetting('setDialect', 'dialect', 'value');
+bindSetting('setClip', 'clip');
+bindSetting('setTwitch', 'twitch', 'value', (v) => v.trim());
 bindSetting('setMicDevice', 'micDevice', 'value');
 $('setMicDevice').addEventListener('input', () => resetMic('رح نشغّل المايك الجديد ونعايره بالليلة الجاية.'));
 $('setStreamer').addEventListener('input', listMics);
@@ -354,6 +373,11 @@ async function startNight() {
   mic.onClip = (clip) => game?.onClip(clip);
   $('micBar').classList.toggle('hidden', !mic.enabled);
   ui.bagSig = null;
+  if (settings.clip) clipper.start();
+  if (settings.twitch) {
+    chat = new TwitchChat(settings.twitch, (user, text) => game?.chat(user, text));
+    chat.connect();
+  }
   const cfg = { ...nightConfig(DIFFICULTIES[difficulty], night), id: difficulty };
   game = new Game({ renderer, audio, mic, mimic, cfg, mem, progress, settings, ui });
   window.__game = game;
@@ -375,6 +399,9 @@ $('btnMenu').onclick = () => {
 };
 
 function resetScene() {
+  clipper.stop();
+  chat?.close();
+  chat = null;
   game?.monster.song?.stop();
   game = null;
   window.speechSynthesis?.cancel();

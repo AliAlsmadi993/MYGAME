@@ -1,5 +1,7 @@
 // جمل تمسخر السعلوة: كل جملة إلها موقف (trigger) وشرط مبني على ذاكرتها عنك.
 // ctx = { mem, run, favHide, hideLabel, room, night, hideKind, lit, carryingAnklet }
+import { DIALECT_TAUNTS } from './dialects.js';
+
 export const TAUNTS = [
   // بداية الليلة
   { id: 'night2', on: 'start', when: (c) => c.night === 2, ar: 'رجعت لليلة ثانية؟… هالمرة بعرف البيت أحسن منك', en: 'Back for a second night?… I know the house better than you now' },
@@ -47,11 +49,13 @@ export const TAUNTS = [
 
 const textOf = (v, c) => (typeof v === 'function' ? v(c) : v);
 
-// أول جملة مناسبة ما انقالت بهالجولة؛ بالتجوّل بنختار عشوائياً بين المناسب
+// أول جملة مناسبة ما انقالت بهالجولة؛ بالتجوّل بنختار عشوائياً بين المناسب.
+// ctx.dialect: levant (الأصل) | gulf | iraq | egypt
 export function pickTaunt(trigger, ctx, used, rand = Math.random) {
   const ok = TAUNTS.filter((t) => t.on === trigger && !used.has(t.id) && t.when(ctx));
   if (!ok.length) return null;
   const t = trigger === 'idle' ? ok[Math.floor(rand() * ok.length)] : ok[0];
   used.add(t.id);
-  return { id: t.id, ar: textOf(t.ar, ctx), en: textOf(t.en, ctx) };
+  const ar = DIALECT_TAUNTS[ctx.dialect]?.[t.id] ?? t.ar;
+  return { id: t.id, ar: textOf(ar, ctx), en: textOf(t.en, ctx) };
 }

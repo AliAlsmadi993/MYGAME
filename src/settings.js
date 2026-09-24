@@ -11,6 +11,9 @@ export const DEFAULT_SETTINGS = {
   micGain: 1, // حساسية المايك
   micDevice: '', // جهاز المايك (فاضي = الافتراضي)
   voiceLang: 'ar', // لغة صوت السعلوة: ar | en (الترجمة دايماً بالثنتين)
+  dialect: 'levant', // لهجتها: levant | gulf | iraq | egypt
+  clip: false, // احفظ آخر لحظات قبل الموت كفيديو
+  twitch: '', // قناة تويتش لتصويت الجمهور (فاضي = مطفي)
 };
 
 export function loadSettings(storage = globalThis.localStorage) {

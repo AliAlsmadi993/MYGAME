@@ -10,6 +10,7 @@ import { Player } from './player.js';
 import { Monster } from './monster/monster.js';
 import * as M from './monster/memory.js';
 import { pickTaunt } from './monster/taunts.js';
+import { DIALECTS } from './monster/dialects.js';
 import { levelToNoise } from './audio/mic.js';
 import { DAWN_HOUR } from './config.js';
 import { createPost } from './post.js';
@@ -19,6 +20,7 @@ import { Director, pickScare } from './director.js';
 import { tapesForNight } from './story/tapes.js';
 import { resolveEnding, ENDINGS } from './story/endings.js';
 import { noteTape, saveProgress, finishRun, recorderUnlocked } from './progress.js';
+import { Vote, ACTIONS, VOTE_SECONDS } from './audience.js';
 
 export const spotLabel = (s) => `${HIDE_KINDS[s.kind].ar} (${ROOMS[s.room].ar})`;
 const SALT_SECONDS = 45;
@@ -109,6 +111,9 @@ export class Game {
     this.#setupDoors();
     this.glass = new Set(GLASS.map((g) => `${g.x},${g.y}`));
     this.nextHouseScare = 10;
+    this.vote = new Vote();
+    this.voteT = VOTE_SECONDS;
+    this.audienceOn = !!settings.twitch;
     this.ghost = null;
     this.pickups = [];
     this.#spawnPickups();
@@ -261,6 +266,47 @@ export class Game {
       }
     }
     this.monPrevTile = mt;
+  }
+
+  // ---------- الجمهور (تويتش) ----------
+  chat(user, text) {
+    if (this.state === 'play') this.vote.add(user, text);
+  }
+
+  #audience(dt) {
+    if (!this.audienceOn) return;
+    this.voteT -= dt;
+    if (this.voteT > 0) return;
+    this.voteT = VOTE_SECONDS;
+    const a = this.vote.close();
+    if (!a) return;
+    this.ui.toast(`🗳 الجمهور اختار: ${ACTIONS[a].ar}`);
+    const p = this.player;
+    switch (a) {
+      case 'light':
+        p.flashlightOn = false;
+        this.audio.playAt('click');
+        break;
+      case 'sing':
+        this.monster.singBoost = 15;
+        break;
+      case 'door': {
+        // أقرب باب مفتوح بينصفق ويتسكّر
+        const near = this.doors
+          .filter((d) => d.open && !this.#doorBusy(d))
+          .map((d) => ({ d, dist: Math.hypot(tileCenter(d.x, d.y).x - p.pos.x, tileCenter(d.x, d.y).z - p.pos.z) }))
+          .filter((o) => o.dist < 14)
+          .sort((x, y) => x.dist - y.dist)[0];
+        if (near) {
+          this.#setDoor(near.d, false);
+          this.audio.playAt('slam', { ...tileCenter(near.d.x, near.d.y), y: 1.5 });
+        } else this.#scare();
+        break;
+      }
+      case 'scare':
+        this.#scare();
+        break;
+    }
   }
 
   // ---------- المانيكان والمراية والمهد ----------
@@ -779,17 +825,23 @@ export class Game {
       hasRoute: !!M.hottestRoute(this.mem, 2.5),
       carryingAnklet: this.carried.has('anklet'),
       room: roomAt(this.player.tile().x, this.player.tile().y),
+      dialect: this.settings.dialect,
       lastDeathLabel: ldSpot ? spotLabel(ldSpot) : 'نفس المكان',
       ...extra,
     };
+  }
+
+  // بصوتها: باللغة واللهجة المختارة
+  #say(t, pos) {
+    const en = this.settings.voiceLang === 'en';
+    this.audio.speak(en ? t.en : t.ar, pos, en ? 'en' : DIALECTS[this.settings.dialect]?.voice ?? 'ar');
   }
 
   #taunt(trigger, extra) {
     const t = pickTaunt(trigger, this.#tauntCtx(extra), this.usedTaunts);
     if (!t) return;
     const mp = this.monster.pos;
-    const en = this.settings.voiceLang === 'en';
-    this.audio.speak(en ? t.en : t.ar, { x: mp.x, y: 2, z: mp.z }, en ? 'en' : 'ar');
+    this.#say(t, { x: mp.x, y: 2, z: mp.z });
     this.ui.subtitle(`«${t.ar}»`, t.en, 5, true);
     return t;
   }
@@ -1000,7 +1052,7 @@ export class Game {
     });
     saveProgress(this.progress);
     const deathTaunt = result === 'death' ? pickTaunt('death', this.#tauntCtx(), this.usedTaunts) : null;
-    if (deathTaunt) this.audio.speak(deathTaunt.ar);
+    if (deathTaunt) this.#say(deathTaunt, null);
     // الفجر: تلفونك بيرن… وصوتك بيقول "ارجع"
     if (ending === 'dawn') {
       const clip = this.mimic.pick('talk');
@@ -1160,6 +1212,7 @@ export class Game {
     const mr = this.world.mirror.position;
     this.world.mirror.visible = Math.hypot(mr.x - p.pos.x, mr.z - p.pos.z) < 11;
     this.#houseScares(dt, room);
+    this.#audience(dt);
     const fogTarget = room === 'r' ? 0.03 : 0.07;
     this.scene.fog.density += (fogTarget - this.scene.fog.density) * Math.min(1, dt * 2);
 
@@ -1256,6 +1309,7 @@ export class Game {
       breath: p.holdingBreath,
       showItems: this.cfg.hints === 'full' || keys.Tab,
       showBars: this.cfg.hints !== 'none' || keys.Tab,
+      vote: this.audienceOn ? { tally: this.vote.tally(), left: Math.ceil(this.voteT) } : null,
     });
     this.post.render(dt, { fear: this.audio.fear, hidden: p.hidden ? 1 : 0 });
   }
