@@ -28,6 +28,8 @@ export class Monster {
     this.onState = null;
     this.onSalt = null; // لما خط ملح يوقفها
     this.avoid = new Set(); // خانات الملح
+    this.closed = new Set(); // الأبواب المسكّرة (بتحجب الرؤية وبتكتم الصوت)
+    this.onStairs = null;
     this.spots = HIDE_SPOTS; // المخابئ المتاحة بهالليلة
     this.t = 0;
     const c = tileCenter(MONSTER_LAIR.x, MONSTER_LAIR.y);
@@ -75,7 +77,7 @@ export class Monster {
     if (this.state === 'retreat' || this.state === 'chase') return false;
     const d = Math.hypot(noise.x - this.pos.x, noise.z - this.pos.z);
     let radius = noise.radius * this.cfg.hearing;
-    if (!lineOfSight(this.pos.x, this.pos.z, noise.x, noise.z)) radius *= 0.6;
+    if (!lineOfSight(this.pos.x, this.pos.z, noise.x, noise.z, this.closed)) radius *= 0.6;
     if (d > radius) return false;
     // صوت جديد من نفس المكان اللي عم تفتّشه: بتكمّل تفتيش بدل ما تبلّش من جديد
     const busy = this.state === 'investigate' || this.state === 'search';
@@ -109,7 +111,7 @@ export class Monster {
       const dot = (dx * this.facing.x + dz * this.facing.z) / d;
       if (dot < 0.35) return false;
     }
-    return lineOfSight(this.pos.x, this.pos.z, player.pos.x, player.pos.z);
+    return lineOfSight(this.pos.x, this.pos.z, player.pos.x, player.pos.z, this.closed);
   }
 
   // كمين عند مكان معيّن (طريق الهروب المفضّل أو مكان الاستدراج)
@@ -141,7 +143,7 @@ export class Monster {
     const h = player.hidden;
     if (!h || !HIDE_KINDS[h.spot.kind].lightExposed || !player.light) return false;
     const d = this.pos.distanceTo(h.pos);
-    return d < 10 * this.cfg.sight && lineOfSight(this.pos.x, this.pos.z, h.pos.x, h.pos.z);
+    return d < 10 * this.cfg.sight && lineOfSight(this.pos.x, this.pos.z, h.pos.x, h.pos.z, this.closed);
   }
 
   update(dt, player, ctx) {
@@ -309,6 +311,20 @@ export class Monster {
     }
     if (this.state !== 'chase') this.direct = null;
     if ((!this.path?.length && !this.direct) || this.opening) return;
+    // الدرج: الخانة الجاية مش جنبها، يعني طلعت أو نزلت
+    if (!this.direct) {
+      const here = this.tile();
+      const nx = this.path[0];
+      if (Math.abs(nx.x - here.x) + Math.abs(nx.y - here.y) > 1) {
+        const c = tileCenter(nx.x, nx.y);
+        const from = this.pos.clone();
+        this.pos.set(c.x, 0, c.z);
+        this.path.shift();
+        this.onStairs?.(from, this.pos.clone());
+        this.pause = 1.2;
+        return;
+      }
+    }
     const c = this.direct ? { x: this.direct.x, z: this.direct.z } : tileCenter(this.path[0].x, this.path[0].y);
     const dx = c.x - this.pos.x;
     const dz = c.z - this.pos.z;

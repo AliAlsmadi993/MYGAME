@@ -2,7 +2,7 @@
 export const TILE = 2.5;
 export const WALL_H = 3.2;
 
-export const LAYOUT = [
+const HOUSE = [
   '#########################',
   '#kkkkkk#aaaaaaaa#bbbbbbb#',
   '#kkkkkk#aaaaaaaa#bbbbbbb#',
@@ -23,6 +23,12 @@ export const LAYOUT = [
   '###########G#############',
 ];
 
+// السطح: منطقة منفصلة على الشبكة (بعيدة عن البيت) وبتوصلها بالدرج من الحوش
+const ROOF = { x0: 46, x1: 52, y0: 5, y1: 10 };
+export const LAYOUT = HOUSE.map(
+  (row, y) => row + Array.from({ length: 30 }, (_, i) => (25 + i >= ROOF.x0 && 25 + i <= ROOF.x1 && y >= ROOF.y0 && y <= ROOF.y1 ? 'r' : '#')).join(''),
+);
+
 export const ROOMS = {
   k: { ar: 'المطبخ', en: 'Kitchen' },
   a: { ar: 'المضافة', en: 'Guest room' },
@@ -33,7 +39,16 @@ export const ROOMS = {
   h: { ar: 'غرفة الأطفال', en: "Children's room" },
   e: { ar: 'المدخل', en: 'Entrance' },
   u: { ar: 'القبو', en: 'Cellar', dark: true },
+  r: { ar: 'السطح', en: 'Roof', openSky: true, roof: true },
 };
+
+// الدرج: خانتين مربوطات ببعض (من الحوش للسطح)
+export const STAIRS = { down: { x: 18, y: 10 }, up: { x: 46, y: 10 } };
+const LINKS = new Map([
+  [`${STAIRS.down.x},${STAIRS.down.y}`, STAIRS.up],
+  [`${STAIRS.up.x},${STAIRS.up.y}`, STAIRS.down],
+]);
+export const linkedTile = (x, y) => LINKS.get(`${x},${y}`) ?? null;
 
 // أماكن الاختباء والأشياء الثابتة (x = عمود، y = صف)
 export const HIDE_SPOTS = [
@@ -47,6 +62,7 @@ export const HIDE_SPOTS = [
   { id: 'curtain_l', kind: 'curtain', x: 6, y: 10, room: 'l' },
   { id: 'curtain_a', kind: 'curtain', x: 12, y: 4, room: 'a' },
   { id: 'stall_d', kind: 'stall', x: 23, y: 10, room: 'd' },
+  { id: 'tank_r', kind: 'tank', x: 52, y: 5, room: 'r' },
 ];
 
 // خصائص كل نوع مخبأ (قسم 15): muffle = كم بيوصل من صوتك، eye = ارتفاع النظر، open = مدة فتحه، breathSave = فرصة النجاة بحبس النفَس
@@ -55,6 +71,7 @@ export const HIDE_KINDS = {
   bed: { breathSave: 0.6, ar: 'تحت السرير', en: 'Under the bed', muffle: 0.6, eye: 0.35, open: 1.1 },
   chest: { breathSave: 0.5, ar: 'السحّارة', en: 'The chest', muffle: 0.25, eye: 0.5, open: 1.6, blind: true, lowPriority: true },
   curtain: { breathSave: 0.15, ar: 'ورا الستارة', en: 'Behind the curtain', muffle: 0.85, eye: 1.5, open: 0.6, lightExposed: true },
+  tank: { breathSave: 0.5, ar: 'خزان المي عالسطح', en: 'Rooftop water tank', muffle: 0.3, eye: 1.0, open: 1.4, lowPriority: true, enterTime: 1.6 },
   stall: { breathSave: 0, ar: 'بيت الخلاء (بيتسكّر)', en: 'Latrine (locks)', muffle: 0.4, eye: 1.4, open: 3.5, locks: true },
 };
 export const WELL = { x: 13, y: 8 };
@@ -73,7 +90,7 @@ export const ITEMS = [
   { id: 'anklet', ar: 'الخلخال الفضي', en: 'Silver anklet', rooms: ['u'], jingles: true },
   { id: 'photo', ar: 'صورة العائلة القديمة', en: 'Old family photo', rooms: ['h', 'a'] },
   { id: 'key', ar: 'مفتاح السحّارة النحاسي', en: 'Brass chest key', rooms: ['k', 'd', 'h'] },
-  { id: 'water', ar: 'قارورة ماء البير القديمة', en: 'Old well-water flask', rooms: ['k', 'd'] },
+  { id: 'water', ar: 'قارورة ماء البير القديمة', en: 'Old well-water flask', rooms: ['r', 'k', 'd'] },
 ];
 
 export const W = LAYOUT[0].length;
@@ -121,7 +138,8 @@ export function doorTiles() {
 }
 
 // خط رؤية بين نقطتين بالعالم (DDA على الشبكة)
-export function lineOfSight(ax, az, bx, bz) {
+// blockers: خانات بتحجب الرؤية زيادة (الأبواب المسكّرة)
+export function lineOfSight(ax, az, bx, bz, blockers = null) {
   const dx = bx - ax;
   const dz = bz - az;
   const dist = Math.hypot(dx, dz);
@@ -129,7 +147,7 @@ export function lineOfSight(ax, az, bx, bz) {
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const { x, y } = worldToTile(ax + dx * t, az + dz * t);
-    if (isWall(x, y)) return false;
+    if (isWall(x, y) || blockers?.has(`${x},${y}`)) return false;
   }
   return true;
 }
@@ -159,12 +177,13 @@ export function findPath(start, goal, avoid = null) {
       }
       return path.reverse();
     }
-    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cur.x + ox;
-      const ny = cur.y + oy;
+    const link = linkedTile(cur.x, cur.y);
+    const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1]].map(([ox, oy, c]) => [cur.x + ox, cur.y + oy, c]);
+    if (link) steps.push([link.x, link.y, 3]); // الدرج
+    for (const [nx, ny, cost] of steps) {
       if (!isWalkable(nx, ny) || avoid?.has(`${nx},${ny}`)) continue;
       const nk = key(nx, ny);
-      const g = cur.g + 1;
+      const g = cur.g + cost;
       if (g < (gScore.get(nk) ?? Infinity)) {
         gScore.set(nk, g);
         came.set(nk, ck);
@@ -173,4 +192,23 @@ export function findPath(start, goal, avoid = null) {
     }
   }
   return null;
+}
+
+// كل الخانات اللي بتوصلها من start بدون ما تمر من avoid (للأبواب المقفلة ومفاتيحها)
+export function reachable(start, avoid = null) {
+  const seen = new Set([`${start.x},${start.y}`]);
+  const queue = [start];
+  while (queue.length) {
+    const { x, y } = queue.shift();
+    const next = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]];
+    const link = linkedTile(x, y);
+    if (link) next.push([link.x, link.y]);
+    for (const [nx, ny] of next) {
+      const k = `${nx},${ny}`;
+      if (seen.has(k) || !isWalkable(nx, ny) || avoid?.has(k)) continue;
+      seen.add(k);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return seen;
 }

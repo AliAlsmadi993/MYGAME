@@ -360,3 +360,18 @@ button:disabled {
 .ach li.off {
   color: #4a4036;
 }
+#hideMask.tank {
+  background: radial-gradient(circle at 50% 12%, rgba(40, 60, 80, 0.2) 0 12%, rgba(4, 8, 12, 0.97) 20%);
+}
+#fade {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s;
+  z-index: 8;
+}
+#fade.on {
+  opacity: 1;
+}

@@ -61,6 +61,12 @@
         <label><input type="checkbox" id="setScream" /> قلّل الصراخ المفاجئ</label>
         <label><input type="checkbox" id="setMicMeter" /> اعرض مؤشر المايك</label>
         <label><input type="checkbox" id="setStreamer" /> وضع الستريمر: تنبيه قبل تشغيل أي تسجيل من صوتي</label>
+        <label>حساسية المايك <input type="range" id="setMicGain" min="0.5" max="2" step="0.1" /></label>
+        <label>جهاز المايك <select id="setMicDevice"><option value="">الافتراضي</option></select></label>
+        <label>صوت السعلوة
+          <select id="setVoice"><option value="ar">عربي</option><option value="en">English</option></select>
+        </label>
+        <button id="btnRecalib" class="ghost">أعد معايرة المايك</button>
         <button id="btnWipeBook" class="ghost">امسح دفتر الجدة والإنجازات</button>
       </details>
 
@@ -135,6 +141,7 @@
     </div>
     <div id="subs"></div>
     <div id="toasts"></div>
+    <div id="fade"></div>
 
     <script type="module" src="./src/main.js"></script>
   </body>

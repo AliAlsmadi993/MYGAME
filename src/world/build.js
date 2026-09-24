@@ -1,6 +1,6 @@
 // بناء البيت بـ Three.js بشكل واقعي: مواد PBR، ظلال، شموع بترجف، ضوء قمر، وأثاث عربي قديم.
 import * as THREE from 'three';
-import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, charAt, isWall, tileCenter, roomAt } from './map.js';
+import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, STAIRS, ROOMS, charAt, isWall, tileCenter, roomAt, roomTiles } from './map.js';
 import { materials } from './textures.js';
 
 const DOOR_H = 2.3;
@@ -76,7 +76,7 @@ export function buildWorld(scene) {
   const C = (x, y) => tileCenter(x, y);
 
   // ---------- الأرضيات ----------
-  const floorMat = { c: M.cobbles, u: M.stone, b: M.wood, a: M.tiles, k: M.tiles, l: M.tiles, h: M.wood, d: M.tiles, e: M.stone, '.': M.tiles };
+  const floorMat = { c: M.cobbles, u: M.stone, b: M.wood, a: M.tiles, k: M.tiles, l: M.tiles, h: M.wood, d: M.tiles, e: M.stone, r: M.stone, '.': M.tiles };
   const byMat = new Map();
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
@@ -96,12 +96,14 @@ export function buildWorld(scene) {
   // ---------- الحيطان ----------
   const plasterWalls = [];
   const stoneWalls = [];
+  const parapets = []; // حيطان السطح: قصيرة
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       if (!isWall(x, y) || charAt(x, y) === 'G') continue;
       const around = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => (isWall(x + dx, y + dy) ? null : charAt(x + dx, y + dy)));
       if (around.every((r) => r === null)) continue;
-      (around.some((r) => r === 'u' || r === 'c' || r === 'e') ? stoneWalls : plasterWalls).push({ x, y });
+      if (around.includes('r')) parapets.push({ x, y });
+      else (around.some((r) => r === 'u' || r === 'c' || r === 'e') ? stoneWalls : plasterWalls).push({ x, y });
     }
   const wallGeo = new THREE.BoxGeometry(TILE, WALL_H, TILE);
   for (const [cells, mat] of [[plasterWalls, M.plaster], [stoneWalls, M.stone]]) {
@@ -110,6 +112,11 @@ export function buildWorld(scene) {
       return m4.makeTranslation(p.x, WALL_H / 2, p.z);
     }));
   }
+  const PARAPET_H = 1.05;
+  scene.add(instanced(new THREE.BoxGeometry(TILE, PARAPET_H, TILE), M.plaster, parapets, ({ x, y }, m4) => {
+    const p = C(x, y);
+    return m4.makeTranslation(p.x, PARAPET_H / 2, p.z);
+  }));
   // وزرة حجر تحت الجص
   const skirting = [];
   for (const { x, y } of plasterWalls)
@@ -122,7 +129,7 @@ export function buildWorld(scene) {
 
   // ---------- السقف والجسور الخشبية ----------
   const ceilCells = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!isWall(x, y) && charAt(x, y) !== 'c') ceilCells.push({ x, y });
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!isWall(x, y) && !ROOMS[charAt(x, y)]?.openSky) ceilCells.push({ x, y });
   const ceilMat = M.ceiling.clone();
   ceilMat.side = THREE.DoubleSide;
   scene.add(instanced(new THREE.PlaneGeometry(TILE, TILE).rotateX(Math.PI / 2), ceilMat, ceilCells, ({ x, y }, m4) => {
@@ -149,6 +156,146 @@ export function buildWorld(scene) {
         scene.add(mesh(jamb, M.woodDark, p.x + (alongX ? s * TILE * 0.36 : 0), DOOR_H / 2, p.z + (alongX ? 0 : s * TILE * 0.36)));
       }
     }
+
+  // ---------- الأبواب الخشبية (بتنفتح وبتتسكّر) ----------
+  const doors = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (charAt(x, y) !== '.') continue;
+      const p = C(x, y);
+      const alongX = isWall(x - 1, y) && isWall(x + 1, y);
+      const w = TILE * 0.72 - 0.14;
+      const hinge = new THREE.Group();
+      const leaf = mesh(new THREE.BoxGeometry(w, DOOR_H - 0.12, 0.07), M.wood, w / 2, (DOOR_H - 0.12) / 2, 0, { parent: hinge });
+      for (const yy of [0.5, 1.2, 1.9]) mesh(new THREE.BoxGeometry(w * 0.9, 0.1, 0.1), M.woodDark, w / 2, yy, 0, { parent: hinge });
+      mesh(new THREE.SphereGeometry(0.04, 6, 4), M.metal, w - 0.12, 1.05, 0.06, { parent: hinge, cast: false });
+      void leaf;
+      // المفصّلة عند طرف الإطار
+      const base = alongX ? 0 : -Math.PI / 2;
+      hinge.position.set(p.x - (alongX ? w / 2 : 0), 0, p.z - (alongX ? 0 : w / 2));
+      hinge.rotation.y = base;
+      scene.add(hinge);
+      doors.push({ x, y, hinge, base, angle: 0 });
+    }
+
+  // ---------- السطح: الدرج، الحبال، والقرية تحت ----------
+  const sd = C(STAIRS.down.x, STAIRS.down.y);
+  for (let i = 0; i < 7; i++) {
+    // درج حجر طالع عالحيط الشرقي
+    const h = 0.25 * (i + 1);
+    scene.add(mesh(new THREE.BoxGeometry(0.32, h, 1.1), M.stone, sd.x - 0.9 + i * 0.32, h / 2, sd.z + 0.55));
+  }
+  addCollider(sd.x + 0.1, sd.z + 0.55, 1.1, 0.55);
+  const su = C(STAIRS.up.x, STAIRS.up.y);
+  scene.add(mesh(new THREE.PlaneGeometry(1.2, 1.2).rotateX(-Math.PI / 2), M.dark, su.x, 0.01, su.z + 0.5, { cast: false }));
+  for (const [ox, oz, rw, rd] of [[-0.62, 0.5, 0.05, 1.2], [0.62, 0.5, 0.05, 1.2], [0, -0.1, 1.2, 0.05]]) {
+    scene.add(mesh(new THREE.BoxGeometry(rw, 0.9, rd), M.metal, su.x + ox, 0.45, su.z + oz));
+  }
+  const roofTiles = roomTiles('r');
+  const rc = roofTiles.reduce((a, t) => ({ x: a.x + C(t.x, t.y).x / roofTiles.length, z: a.z + C(t.x, t.y).z / roofTiles.length }), { x: 0, z: 0 });
+  // حبل غسيل عليه شراشف بتتحرّك مع الريح
+  const sheets = [];
+  const clothMat = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 1, side: THREE.DoubleSide });
+  scene.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, TILE * 4, 4), M.sheet, rc.x, 2.0, rc.z, { rz: Math.PI / 2, cast: false }));
+  for (const s of [-1, 1]) scene.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.1, 6), M.woodDark, rc.x + s * TILE * 2, 1.05, rc.z));
+  for (let i = 0; i < 3; i++) {
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.5, 6, 6), clothMat);
+    sh.geometry.translate(0, -0.75, 0);
+    sh.position.set(rc.x - 2.6 + i * 2.2, 2.0, rc.z);
+    sh.castShadow = true;
+    scene.add(sh);
+    sheets.push(sh);
+  }
+  // القرية النايمة تحت: بيوت معتمة وكم شباك مضوّي، ومأذنة بعيدة
+  const houseMat = new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: 1 });
+  const winMat = new THREE.MeshBasicMaterial({ color: 0xffb060 });
+  for (let i = 0; i < 34; i++) {
+    const a = (i / 34) * Math.PI * 2 + Math.random() * 0.2;
+    const r = 16 + Math.random() * 22;
+    const w = 4 + Math.random() * 6;
+    const h = 3 + Math.random() * 4;
+    const x = rc.x + Math.cos(a) * r;
+    const z = rc.z + Math.sin(a) * r;
+    const b = mesh(new THREE.BoxGeometry(w, h, w * (0.6 + Math.random() * 0.6)), houseMat, x, -WALL_H - 1 + h / 2, z, { ry: Math.random(), cast: false });
+    scene.add(b);
+    if (Math.random() < 0.3) scene.add(mesh(new THREE.PlaneGeometry(0.5, 0.7), winMat, x - Math.cos(a) * (w / 2 + 0.05), -WALL_H - 1 + h * 0.6, z - Math.sin(a) * (w / 2 + 0.05), { ry: -a - Math.PI / 2, cast: false }));
+  }
+  const mp = { x: rc.x + 30, z: rc.z - 25 };
+  scene.add(mesh(new THREE.CylinderGeometry(0.9, 1.1, 16, 8), houseMat, mp.x, -WALL_H + 4, mp.z, { cast: false }));
+  scene.add(mesh(new THREE.ConeGeometry(1.1, 3, 8), houseMat, mp.x, -WALL_H + 13.5, mp.z, { cast: false }));
+  scene.add(mesh(new THREE.SphereGeometry(0.25, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6fd08a }), mp.x, -WALL_H + 11.6, mp.z, { cast: false }));
+  // نجوم
+  const starGeo = new THREE.BufferGeometry();
+  const sp = [];
+  for (let i = 0; i < 500; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const e = 0.15 + Math.random() * 1.2;
+    sp.push(rc.x + Math.cos(a) * Math.cos(e) * 90, Math.sin(e) * 90, rc.z + Math.sin(a) * Math.cos(e) * 90);
+  }
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xaab4c8, size: 0.35, fog: false })));
+
+  // ---------- رسومات الأطفال عالحيطان ----------
+  const drawing = (seed) => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 200;
+    const g = c.getContext('2d');
+    g.fillStyle = '#d8cfb8';
+    g.fillRect(0, 0, 256, 200);
+    g.lineWidth = 4;
+    g.lineCap = 'round';
+    const stick = (x, y, s, col) => {
+      g.strokeStyle = col;
+      g.beginPath();
+      g.arc(x, y, 9 * s, 0, Math.PI * 2);
+      g.moveTo(x, y + 9 * s);
+      g.lineTo(x, y + 40 * s);
+      g.moveTo(x - 14 * s, y + 22 * s);
+      g.lineTo(x + 14 * s, y + 22 * s);
+      g.moveTo(x, y + 40 * s);
+      g.lineTo(x - 10 * s, y + 60 * s);
+      g.moveTo(x, y + 40 * s);
+      g.lineTo(x + 10 * s, y + 60 * s);
+      g.stroke();
+    };
+    const kids = 2 + (seed % 3);
+    for (let i = 0; i < kids; i++) stick(40 + i * 38, 110, 1, ['#2a4fa0', '#b02a2a', '#2a8a3a'][i % 3]);
+    // المرأة الطويلة: شعر أسود طويل وإيدين طوال
+    g.strokeStyle = '#111';
+    g.lineWidth = 5;
+    const x = 200;
+    g.beginPath();
+    g.arc(x, 30, 12, 0, Math.PI * 2);
+    g.moveTo(x, 42);
+    g.lineTo(x, 140);
+    g.moveTo(x, 70);
+    g.lineTo(x - 70, 110);
+    g.moveTo(x, 70);
+    g.lineTo(x + 30, 120);
+    g.moveTo(x, 140);
+    g.lineTo(x - 18, 190);
+    g.moveTo(x, 140);
+    g.lineTo(x + 18, 190);
+    g.stroke();
+    for (let i = -3; i <= 3; i++) {
+      g.beginPath();
+      g.moveTo(x + i * 4, 22);
+      g.quadraticCurveTo(x + i * 9, 60, x + i * 7, 100);
+      g.stroke();
+    }
+    g.fillStyle = '#b02a2a';
+    g.font = 'bold 22px sans-serif';
+    g.fillText(seed % 2 ? 'ستّي' : 'هي', 20, 30);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 1 });
+  };
+  // على الحيط الشمالي لغرفة الأطفال والقبو (z = بداية صف 12)
+  for (const [tx, seed, rz] of [[2, 1, 0.05], [4, 2, -0.08], [5, 3, 0.03], [18, 4, 0.1], [20, 5, -0.05]]) {
+    const p = C(tx, 12);
+    scene.add(mesh(new THREE.PlaneGeometry(0.62, 0.48), drawing(seed), p.x, 1.1 + (seed % 2) * 0.25, 12 * TILE + 0.02, { rz, cast: false }));
+  }
 
   // ---------- الشبابيك (عالحيطان الخارجية) ----------
   const glass = new THREE.MeshStandardMaterial({ color: 0x0b1522, emissive: 0x28405e, emissiveIntensity: 0.55, roughness: 0.2 });
@@ -243,6 +390,12 @@ export function buildWorld(scene) {
       mesh(geo, cloth, 0, 1.55, 0.2, { parent: g });
       mesh(new THREE.CylinderGeometry(0.025, 0.025, TILE, 6), M.metal, 0, 2.95, 0.2, { parent: g, rz: Math.PI / 2 });
       facing();
+    } else if (s.kind === 'tank') {
+      // خزان مي معدني على قاعدة، بدرج صغير
+      mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.5, 16), M.metal, 0, 1.25, 0, { parent: g });
+      mesh(new THREE.CylinderGeometry(0.82, 0.82, 0.06, 16), M.woodDark, 0, 2.02, 0, { parent: g });
+      for (const [x, z] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) mesh(new THREE.BoxGeometry(0.08, 0.5, 0.08), M.metal, x, 0.25, z, { parent: g });
+      for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.4, 0.03, 0.03), M.metal, -0.1, 0.3 + i * 0.35, -0.85, { parent: g });
     } else if (s.kind === 'stall') {
       // بيت خلاء خشبي صغير بباب بيتسكّر من جوّا
       for (const [x, z, w, d] of [[-0.9, 0, 0.08, 1.9], [0.9, 0, 0.08, 1.9], [0, -0.95, 1.9, 0.08]]) mesh(new THREE.BoxGeometry(w, 2.3, d), M.woodDark, x, 1.15, z, { parent: g });
@@ -431,7 +584,9 @@ export function buildWorld(scene) {
     blockedTiles,
     wellPos: wp,
     gatePos: gp,
+    doors,
     update(dt, t) {
+      for (const [i, sh] of sheets.entries()) sh.rotation.x = Math.sin(t * 1.3 + i) * 0.25 + Math.sin(t * 3.1 + i * 2) * 0.05;
       for (const c of candles) {
         if (!c.lit) continue;
         const f = 0.75 + Math.sin(t * 11 + c.seed) * 0.1 + Math.sin(t * 23.7 + c.seed) * 0.08 + (Math.random() - 0.5) * 0.12;
@@ -517,6 +672,21 @@ export function pickupMesh(kind) {
       bit.position.set(0.08, 0, 0.03);
       m.add(shaft, bow, bit);
       m.position.y = 0.015;
+      return m;
+    }
+    case 'doorkey': {
+      // مفتاح حديد كبير قديم
+      m = new THREE.Group();
+      const iron = shine(0x5a5550, 0.9);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.26, 6), iron);
+      shaft.rotation.z = Math.PI / 2;
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 12), iron);
+      bow.position.x = -0.16;
+      bow.rotation.x = Math.PI / 2;
+      const bit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.07), iron);
+      bit.position.set(0.1, 0, 0.04);
+      m.add(shaft, bow, bit);
+      m.position.y = 0.02;
       return m;
     }
     case 'water': {

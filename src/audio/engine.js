@@ -317,6 +317,16 @@ export class AudioEngine {
         env(0.03, 0.5, 0.45);
         noise(0.55, 'bandpass', 1400);
         break;
+      case 'splash': // مي الخزان
+        env(0.02, 0.9, 0.35);
+        noise(1, 'lowpass', 900);
+        noise(0.5, 'bandpass', 2500);
+        break;
+      case 'unlock': // قفل حديد قديم
+        env(0.002, 0.25, 0.4);
+        osc('square', 180, 90, 0.2);
+        noise(0.25, 'bandpass', 2000);
+        break;
       case 'click': // زر المسجّل
         env(0.001, 0.05, 0.4);
         noise(0.06, 'bandpass', 3000);

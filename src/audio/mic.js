@@ -10,6 +10,7 @@ export class Mic {
     this.floor = -60;
     this.speech = -30;
     this.recordEnabled = true;
+    this.gain = 1; // حساسية إضافية من الإعدادات
     this.onClip = null;
     this.onLevel = null;
     this.#pre = [];
@@ -27,11 +28,11 @@ export class Mic {
     return new Promise((resolve) => (this.#manual = { chunks: [], need: seconds, resolve }));
   }
 
-  async enable() {
+  async enable(deviceId = '') {
     const ctx = this.engine.ctx;
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
-    });
+    const audio = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+    if (deviceId) audio.deviceId = { exact: deviceId };
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio });
     const src = ctx.createMediaStreamSource(this.stream);
     const proc = ctx.createScriptProcessor(BLOCK, 1, 1);
     const sink = ctx.createGain();
@@ -56,7 +57,7 @@ export class Mic {
     // تنعيم سريع للصعود وبطيء للنزول
     this.db = db > this.db ? db : this.db * 0.7 + db * 0.3;
     const muted = this.engine.speaking;
-    this.level = muted ? 0 : Math.max(0, (this.db - this.floor) / Math.max(6, this.speech - this.floor));
+    this.level = muted ? 0 : Math.max(0, ((this.db - this.floor) / Math.max(6, this.speech - this.floor)) * this.gain);
     this.onLevel?.(this.level, this.db);
     this.#capture(Float32Array.from(data), rate, muted);
     const man = this.#manual;

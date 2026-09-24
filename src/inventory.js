@@ -8,6 +8,7 @@ export const TOOLS = {
   salt: { ar: 'ملح', en: 'Salt', icon: '🧂', max: 2 },
   bead: { ar: 'خرزة زرقاء', en: 'Blue bead', icon: '🧿', max: 1, passive: true },
   recorder: { ar: 'مسجّل كاسيت', en: 'Tape recorder', icon: '📼', max: 1 },
+  doorkey: { ar: 'مفتاح باب', en: 'Door key', icon: '🗝️', max: 3 },
 };
 
 export class Bag {

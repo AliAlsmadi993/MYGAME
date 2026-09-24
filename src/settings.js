@@ -8,6 +8,9 @@ export const DEFAULT_SETTINGS = {
   reduceScreams: false, // الصرخات المفاجئة أوطى
   streamer: false, // تنبيه قبل أي تسجيل من صوتك
   showMic: true,
+  micGain: 1, // حساسية المايك
+  micDevice: '', // جهاز المايك (فاضي = الافتراضي)
+  voiceLang: 'ar', // لغة صوت السعلوة: ar | en (الترجمة دايماً بالثنتين)
 };
 
 export function loadSettings(storage = globalThis.localStorage) {

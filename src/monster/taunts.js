@@ -17,6 +17,8 @@ export const TAUNTS = [
   { id: 'route', on: 'idle', when: (c) => c.hasRoute, ar: 'بعرف من وين بتهرب… أنا مستنيتك هناك', en: 'I know where you run… I will be waiting' },
   { id: 'dawn', on: 'idle', when: (c) => c.run.hour >= 3, ar: 'الفجر بعيد… بعيد كثير', en: 'Dawn is far… so far' },
   { id: 'anklet_hear', on: 'idle', when: (c) => c.carryingAnklet, ar: 'بسمع خلخالي معك… رنّ… رنّ', en: 'I hear my anklet on you… jingle… jingle' },
+  { id: 'roof', on: 'idle', when: (c) => c.room === 'r', ar: 'طلعت عالسطح؟… القرية نايمة، ما حدا رح يسمعك', en: 'Up on the roof?… the village sleeps, no one will hear you' },
+  { id: 'locked', on: 'locked', when: () => true, ar: 'بتسكّر الأبواب بوجهي؟… أنا ما بدي باب', en: 'Locking doors on me?… I need no door' },
   { id: 'house', on: 'idle', when: () => true, ar: 'أهلين… بيتي بيتك', en: 'Welcome… my house is your house' },
   { id: 'granny', on: 'idle', when: () => true, ar: 'ستّك ما كانت تخاف… إنت ليش خايف؟', en: "Your grandma wasn't afraid… why are you?" },
 

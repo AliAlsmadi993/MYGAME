@@ -48,6 +48,8 @@ export class Player {
     this.battery = 1;
     this.flashlightOn = true;
     this.hidden = null; // المخبأ الحالي
+    this.frozen = 0; // ثواني ما بتقدر تتحرّك فيها (عم تطلع عالخزان)
+    this.blockTiles = null; // الأبواب المسكّرة
     this.holdingBreath = false;
     this.matchT = 0; // عود كبريت مولّع (ثواني)
     this.sensitivity = 1;
@@ -143,6 +145,11 @@ export class Player {
       return out;
     }
 
+    if (this.frozen > 0) {
+      this.frozen -= dt;
+      this.#applyCamera(dt, 0, fear);
+      return out;
+    }
     const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
     const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
     const moving = f !== 0 || s !== 0;
@@ -185,7 +192,7 @@ export class Player {
 
   #solidAt(wx, wz) {
     const { x, y } = worldToTile(wx, wz);
-    return !isWalkable(x, y);
+    return !isWalkable(x, y) || !!this.blockTiles?.has(`${x},${y}`);
   }
 
   #move(dx, dz) {

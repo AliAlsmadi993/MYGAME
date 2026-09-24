@@ -172,3 +172,45 @@ test('item rooms have room for every item', () => {
   assert.ok(findPath(NEST, WELL));
   assert.ok(findPath(MONSTER_LAIR, PLAYER_START));
 });
+
+test('the roof is only reachable by the stairs', async () => {
+  const { STAIRS, linkedTile, reachable, lineOfSight, tileCenter, charAt, W } = await import('../src/world/map.js');
+  assert.equal(W, 55);
+  assert.equal(charAt(STAIRS.down.x, STAIRS.down.y), 'c');
+  assert.equal(charAt(STAIRS.up.x, STAIRS.up.y), 'r');
+  assert.deepEqual(linkedTile(STAIRS.down.x, STAIRS.down.y), STAIRS.up);
+  const roof = roomTiles('r')[0];
+  const path = findPath(PLAYER_START, roof);
+  assert.ok(path, 'roof reachable');
+  const i = path.findIndex((t) => t.x === STAIRS.up.x && t.y === STAIRS.up.y);
+  assert.deepEqual(path[i - 1], STAIRS.down, 'goes through the stairs');
+  // بدون الدرج ما في طريق
+  assert.equal(reachable(PLAYER_START, new Set([`${STAIRS.down.x},${STAIRS.down.y}`])).has(`${roof.x},${roof.y}`), false);
+  // ما في رؤية بين السطح والبيت
+  const a = tileCenter(roof.x, roof.y);
+  const b = tileCenter(20, 8);
+  assert.equal(lineOfSight(a.x, a.z, b.x, b.z), false);
+  assert.ok(HIDE_SPOTS.some((s) => s.kind === 'tank' && s.room === 'r'));
+  assert.ok(ITEMS.find((it) => it.id === 'water').rooms.includes('r'));
+});
+
+test('closed doors block sight, and locked doors cut off areas until unlocked', async () => {
+  const { reachable, lineOfSight, tileCenter } = await import('../src/world/map.js');
+  const a = tileCenter(6, 8); // الليوان جنب الباب
+  const b = tileCenter(9, 8); // الحوش
+  assert.equal(lineOfSight(a.x, a.z, b.x, b.z), true);
+  assert.equal(lineOfSight(a.x, a.z, b.x, b.z, new Set(['7,8'])), false);
+  // القبو إله مدخل وحيد من الحمّام
+  const all = reachable(PLAYER_START);
+  const locked = reachable(PLAYER_START, new Set(['21,11']));
+  assert.ok(all.has('20,14'));
+  assert.equal(locked.has('20,14'), false);
+  assert.ok(locked.size < all.size);
+});
+
+test('door keys and difficulty lock counts', () => {
+  assert.ok(TOOLS.doorkey);
+  for (const d of Object.values(DIFFICULTIES)) assert.ok(d.lockedDoors >= 1);
+  assert.equal(nightConfig(DIFFICULTIES.normal, 2).lockedDoors, DIFFICULTIES.normal.lockedDoors + 1);
+  assert.ok(HIDE_KINDS.tank.enterTime > 0);
+});

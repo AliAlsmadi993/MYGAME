@@ -89,8 +89,11 @@ const ui = {
     }
     $('hint').textContent = h.hint ? `[E] ${h.hint}` : bag.selected ? `[G] ${TOOLS[bag.selected].ar}` : '';
     $('dot').style.display = h.hidden ? 'none' : '';
-    $('hideMask').className = h.hidden ? (h.hidden === 'chest' ? 'blind' : h.hidden === 'curtain' ? 'curtain' : '') : 'hidden';
+    $('hideMask').className = h.hidden ? ({ chest: 'blind', curtain: 'curtain', tank: 'tank' }[h.hidden] ?? '') : 'hidden';
     $('breath').classList.toggle('hidden', !h.breath);
+  },
+  fade(on) {
+    $('fade').classList.toggle('on', on);
   },
   toast(text) {
     const d = document.createElement('div');
@@ -248,13 +251,43 @@ function applySettings() {
     game.player.invertY = settings.invertY;
   }
   $('micBar').style.display = settings.showMic ? '' : 'none';
+  mic.gain = settings.micGain;
 }
+// تغيير جهاز المايك أو إعادة المعايرة: بنطفيه وبيرجع يتعاير ببداية الليلة الجاية
+const resetMic = (msg) => {
+  if (mic.enabled) mic.disable();
+  ui.subtitle(msg, 'The microphone will be recalibrated next night.', 3);
+};
+async function listMics() {
+  try {
+    const devs = (await navigator.mediaDevices?.enumerateDevices()) ?? [];
+    const sel = $('setMicDevice');
+    sel.innerHTML = '<option value="">الافتراضي</option>';
+    devs.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default').forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      // وضع الستريمر: بدون أسماء الأجهزة
+      o.textContent = settings.streamer || !d.label ? `مايك ${i + 1}` : d.label;
+      sel.append(o);
+    });
+    sel.value = settings.micDevice;
+  } catch {
+    /* ما في صلاحية لسا */
+  }
+}
+listMics();
 bindSetting('setSens', 'sensitivity', 'value', Number);
 bindSetting('setInvert', 'invertY');
 bindSetting('setFlash', 'reduceFlashes');
 bindSetting('setScream', 'reduceScreams');
 bindSetting('setMicMeter', 'showMic');
 bindSetting('setStreamer', 'streamer');
+bindSetting('setMicGain', 'micGain', 'value', Number);
+bindSetting('setVoice', 'voiceLang', 'value');
+bindSetting('setMicDevice', 'micDevice', 'value');
+$('setMicDevice').addEventListener('input', () => resetMic('رح نشغّل المايك الجديد ونعايره بالليلة الجاية.'));
+$('setStreamer').addEventListener('input', listMics);
+$('btnRecalib').onclick = () => resetMic('رح نعيد المعايرة ببداية الليلة الجاية.');
 applySettings();
 
 $('btnWarnOk').onclick = () => show('menu');
@@ -294,7 +327,9 @@ async function setupMic() {
   }
   if (mic.enabled) return; // معايرة سابقة
   try {
-    await mic.enable();
+    // الجهاز المحفوظ ممكن ما عاد موجود: نرجع للافتراضي
+    await mic.enable(settings.micDevice).catch(() => mic.enable());
+    listMics();
   } catch {
     ui.subtitle('ما قدرنا نشغّل المايك… رح تلعب بدون مايك.', 'Microphone unavailable, playing without it.', 5);
     return;
