@@ -14,10 +14,18 @@ export class Mic {
     this.onLevel = null;
     this.#pre = [];
     this.#cap = null;
+    this.#manual = null;
   }
 
   #pre;
   #cap;
+  #manual;
+
+  // مسجّل الكاسيت: بيسجّل الثواني الجاية كما هي (اللاعب بيحكي فيه قصداً)
+  recordNext(seconds = 3) {
+    if (!this.enabled) return Promise.resolve(null);
+    return new Promise((resolve) => (this.#manual = { chunks: [], need: seconds, resolve }));
+  }
 
   async enable() {
     const ctx = this.engine.ctx;
@@ -51,6 +59,16 @@ export class Mic {
     this.level = muted ? 0 : Math.max(0, (this.db - this.floor) / Math.max(6, this.speech - this.floor));
     this.onLevel?.(this.level, this.db);
     this.#capture(Float32Array.from(data), rate, muted);
+    const man = this.#manual;
+    if (man) {
+      man.chunks.push(Float32Array.from(data));
+      if ((man.chunks.length * BLOCK) / rate >= man.need) {
+        this.#manual = null;
+        const samples = new Float32Array(man.chunks.length * BLOCK);
+        man.chunks.forEach((c, i) => samples.set(c, i * BLOCK));
+        man.resolve({ samples, sampleRate: rate, peak: 1, kind: 'talk' });
+      }
+    }
   }
 
   // تسجيل مقطع لما اللاعب يحكي أو يصرّخ (مع ربع ثانية قبلها)

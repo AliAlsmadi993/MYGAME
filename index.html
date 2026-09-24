@@ -12,7 +12,17 @@
     <canvas id="view"></canvas>
     <div id="hideMask" class="hidden"></div>
 
-    <section id="menu" class="screen">
+    <section id="warn" class="screen">
+      <h2>تحذير</h2>
+      <div class="box">
+        <p>هاللعبة بتستخدم <b>المايك</b>: السعلوة بتسمع صوتك الحقيقي، وممكن تقلّده.</p>
+        <p>🎧 العب بالسماعات وبالعتمة. فيها مشاهد مخيفة وومضات وأصوات مفاجئة. عمر 16+.</p>
+        <p class="small">🔒 تسجيلات صوتك بتضل على جهازك فقط، وبتقدر تحذفها أو تلعب بدون مايك من القائمة.</p>
+      </div>
+      <button id="btnWarnOk" class="big">فهمت</button>
+    </section>
+
+    <section id="menu" class="screen hidden">
       <h1>السعلوة</h1>
       <p class="tag">بتسمعك… بتتذكّرك… وبتقلّد صوتك.</p>
       <p class="tag en">She hears you. She remembers you. She speaks with your voice.</p>
@@ -20,6 +30,9 @@
       <div class="box">
         <h3>الصعوبة</h3>
         <div id="diffs" class="row"></div>
+        <p id="diffNote" class="small"></p>
+        <h3>الليلة</h3>
+        <div id="nights" class="row"></div>
       </div>
 
       <div class="box">
@@ -35,12 +48,43 @@
         <p id="memInfo" class="small"></p>
       </div>
 
-      <button id="btnStart" class="big">ابدأ الليلة</button>
+      <div class="row">
+        <button id="btnStart" class="big">ابدأ الليلة</button>
+        <button id="btnBook">📖 دفتر الجدة</button>
+      </div>
+
+      <details class="box">
+        <summary>⚙️ الإعدادات</summary>
+        <label>حساسية الماوس <input type="range" id="setSens" min="0.3" max="2.5" step="0.1" /></label>
+        <label><input type="checkbox" id="setInvert" /> اعكس المحور العمودي</label>
+        <label><input type="checkbox" id="setFlash" /> قلّل الومضات (بدون برق)</label>
+        <label><input type="checkbox" id="setScream" /> قلّل الصراخ المفاجئ</label>
+        <label><input type="checkbox" id="setMicMeter" /> اعرض مؤشر المايك</label>
+        <label><input type="checkbox" id="setStreamer" /> وضع الستريمر: تنبيه قبل تشغيل أي تسجيل من صوتي</label>
+        <button id="btnWipeBook" class="ghost">امسح دفتر الجدة والإنجازات</button>
+      </details>
 
       <div class="box small controls">
-        <b>التحكم:</b> WASD مشي · Shift ركض · C انحناء · F الكشاف · E تفاعل/اختباء · G أو زر الماوس الأيمن رمي جرس · Esc إيقاف
+        <b>التحكم:</b> WASD مشي · Shift ركض · C انحناء · F الكشاف · E تفاعل/اختباء · 1-4 أو عجلة الماوس اختيار أداة · G أو زر الماوس الأيمن استعمالها · X رميها · Space حبس النفَس (بالمخبأ) · Tab الأغراض · Esc إيقاف
         <br />🎧 العب بالسماعات، وبالعتمة. عمر 16+.
       </div>
+    </section>
+
+    <section id="book" class="screen hidden">
+      <h2>دفتر الجدة</h2>
+      <div class="box">
+        <h3>الأشرطة</h3>
+        <div id="bookTapes"></div>
+      </div>
+      <div class="box">
+        <h3>النهايات</h3>
+        <ul id="bookEndings"></ul>
+      </div>
+      <div class="box">
+        <h3>الإنجازات</h3>
+        <ul id="bookAch" class="ach"></ul>
+      </div>
+      <button id="btnBookBack">رجوع</button>
     </section>
 
     <section id="calib" class="screen hidden">
@@ -58,6 +102,8 @@
     <section id="end" class="screen hidden">
       <h2 id="endTitle"></h2>
       <p id="endTaunt" class="taunt"></p>
+      <div id="endStory" class="box story"></div>
+      <div id="endAch" class="box hidden"></div>
       <div class="box">
         <h3>إحصائيات الليلة</h3>
         <ul id="endStats"></ul>
@@ -68,6 +114,7 @@
       </div>
       <div class="row">
         <button id="btnAgain" class="big">ليلة ثانية</button>
+        <button id="btnShare">📸 شارك</button>
         <button id="btnMenu" class="ghost">القائمة</button>
       </div>
     </section>
@@ -80,11 +127,14 @@
         <div class="bar" id="micBar"><span>🎤</span><div class="meter"><div id="mic"></div></div></div>
       </div>
       <div id="items"></div>
+      <div id="bag"></div>
+      <div id="breath" class="hidden">🫁 حابس نفَسك…</div>
       <div id="hint"></div>
       <div id="dot"></div>
       <div id="dbg"></div>
     </div>
     <div id="subs"></div>
+    <div id="toasts"></div>
 
     <script type="module" src="./src/main.js"></script>
   </body>

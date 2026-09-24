@@ -1,6 +1,6 @@
 // بناء البيت بـ Three.js بشكل واقعي: مواد PBR، ظلال، شموع بترجف، ضوء قمر، وأثاث عربي قديم.
 import * as THREE from 'three';
-import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, charAt, isWall, tileCenter, roomAt } from './map.js';
+import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, charAt, isWall, tileCenter, roomAt } from './map.js';
 import { materials } from './textures.js';
 
 const DOOR_H = 2.3;
@@ -223,7 +223,34 @@ export function buildWorld(scene) {
   for (const s of HIDE_SPOTS) {
     const p = C(s.x, s.y);
     const g = new THREE.Group();
-    if (s.kind === 'wardrobe') {
+    const facing = () => {
+      const open = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dx, dy]) => !isWall(s.x + dx, s.y + dy)) || [0, 1];
+      g.rotation.y = Math.atan2(open[0], open[1]);
+    };
+    if (s.kind === 'chest') {
+      // سحّارة العرس: صندوق خشب بأحزمة نحاس (والشمعة فوقها)
+      mesh(new THREE.BoxGeometry(1.3, 0.62, 0.62), M.wood, 0, 0.31, -0.6, { parent: g });
+      mesh(new THREE.BoxGeometry(1.34, 0.08, 0.66), M.woodDark, 0, 0.66, -0.6, { parent: g });
+      for (const x of [-0.45, 0, 0.45]) mesh(new THREE.BoxGeometry(0.06, 0.72, 0.66), M.metal, x, 0.36, -0.6, { parent: g });
+      mesh(new THREE.BoxGeometry(0.12, 0.14, 0.04), M.metal, 0, 0.5, -0.27, { parent: g, cast: false });
+    } else if (s.kind === 'curtain') {
+      // ستارة ثقيلة بطيّات، نازلة لقرب الأرض (رجليك ممكن تبيّن)
+      const geo = new THREE.PlaneGeometry(TILE * 0.95, 2.75, 24, 1);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 9) * 0.07);
+      geo.computeVertexNormals();
+      const cloth = new THREE.MeshStandardMaterial({ color: 0x4a1414, roughness: 1, side: THREE.DoubleSide });
+      mesh(geo, cloth, 0, 1.55, 0.2, { parent: g });
+      mesh(new THREE.CylinderGeometry(0.025, 0.025, TILE, 6), M.metal, 0, 2.95, 0.2, { parent: g, rz: Math.PI / 2 });
+      facing();
+    } else if (s.kind === 'stall') {
+      // بيت خلاء خشبي صغير بباب بيتسكّر من جوّا
+      for (const [x, z, w, d] of [[-0.9, 0, 0.08, 1.9], [0.9, 0, 0.08, 1.9], [0, -0.95, 1.9, 0.08]]) mesh(new THREE.BoxGeometry(w, 2.3, d), M.woodDark, x, 1.15, z, { parent: g });
+      mesh(new THREE.BoxGeometry(1.7, 2.1, 0.06), M.wood, 0, 1.08, 0.95, { parent: g });
+      mesh(new THREE.BoxGeometry(0.16, 0.04, 0.04), M.metal, 0.6, 1.1, 1.0, { parent: g, cast: false });
+      mesh(new THREE.BoxGeometry(1.9, 0.08, 2), M.woodDark, 0, 2.34, 0, { parent: g });
+      facing();
+    } else if (s.kind === 'wardrobe') {
       mesh(new THREE.BoxGeometry(1.7, 2.3, 1.1), M.wood, 0, 1.2, 0, { parent: g });
       mesh(new THREE.BoxGeometry(1.8, 0.12, 1.2), M.woodDark, 0, 2.4, 0, { parent: g });
       mesh(new THREE.BoxGeometry(1.8, 0.1, 1.2), M.woodDark, 0, 0.05, 0, { parent: g });
@@ -297,10 +324,8 @@ export function buildWorld(scene) {
   for (let i = 0; i < 3; i++) put(jar, M.clay, 6, 4, -0.8 + i * 0.1, 0, 0.8 - i * 0.55, { solid: i === 1 });
   put(new THREE.CylinderGeometry(0.25, 0.2, 0.25, 12, 1, true), M.metal, 3, 1, 0, 1.0, -0.85);
 
-  // غرفة الجدة: سحّارة، سجادة، مرآة
+  // غرفة الجدة: سجادة، مرآة (السحّارة صارت مخبأ)
   put(new THREE.PlaneGeometry(3, 3.5).rotateX(-Math.PI / 2), M.rug, 20, 3, 0, 0.012, 0, { cast: false });
-  put(new THREE.BoxGeometry(1.2, 0.7, 0.6), M.wood, 21, 1, 0, 0.35, -0.8, { solid: true });
-  for (const x of [-0.45, 0.45]) put(new THREE.BoxGeometry(0.06, 0.72, 0.62), M.metal, 21, 1, x, 0.36, -0.8);
   const mirror = new THREE.MeshStandardMaterial({ color: 0x223, metalness: 1, roughness: 0.08 });
   put(new THREE.PlaneGeometry(0.7, 1.2), mirror, 23, 3, 1.2, 1.6, 0, { ry: -Math.PI / 2, cast: false });
   put(new THREE.BoxGeometry(0.06, 1.35, 0.85), M.woodDark, 23, 3, 1.23, 1.6, 0);
@@ -328,6 +353,29 @@ export function buildWorld(scene) {
     put(new THREE.TorusGeometry(0.4, 0.02, 4, 16), M.metal, tx, ty, ox, 0.25, oz, { rx: Math.PI / 2, cast: false });
   }
   for (let i = 0; i < 4; i++) put(new THREE.SphereGeometry(0.3, 8, 6).scale(1, 0.7, 0.8), M.sheet, 23, 13, 0.6, 0.2 + (i > 2 ? 0.35 : 0), -0.8 + i * 0.5);
+
+  // التلفون الأرضي القديم على طاولة صغيرة
+  const php = C(PHONE.x, PHONE.y);
+  const phone = new THREE.Group();
+  mesh(new THREE.BoxGeometry(0.6, 0.8, 0.45), M.wood, 0, 0.4, 0, { parent: phone });
+  mesh(new THREE.BoxGeometry(0.26, 0.1, 0.22), M.dark, 0, 0.85, 0, { parent: phone });
+  mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12), M.sheet, 0, 0.91, 0.02, { parent: phone, cast: false });
+  mesh(new THREE.CapsuleGeometry(0.03, 0.18, 4, 8), M.dark, 0, 0.94, -0.06, { parent: phone, rz: Math.PI / 2 });
+  phone.position.set(php.x, 0, php.z - 0.7);
+  scene.add(phone);
+  addCollider(php.x, php.z - 0.7, 0.3, 0.25);
+
+  // عشّ السعلوة بالقبو: خِرَق وقش وعظام
+  const np = C(NEST.x, NEST.y);
+  const nest = new THREE.Group();
+  mesh(new THREE.TorusGeometry(0.7, 0.22, 6, 16).scale(1, 1, 0.35).rotateX(Math.PI / 2), M.sheet, 0, 0.08, 0, { parent: nest });
+  mesh(new THREE.CircleGeometry(0.6, 12).rotateX(-Math.PI / 2), M.cloth, 0, 0.03, 0, { parent: nest, cast: false });
+  for (let i = 0; i < 6; i++) {
+    const a = i * 1.1;
+    mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.35, 5), M.sheet, Math.cos(a) * 0.9, 0.03, Math.sin(a) * 0.9, { parent: nest, rz: Math.PI / 2, ry: a * 2 });
+  }
+  nest.position.set(np.x, 0, np.z);
+  scene.add(nest);
 
   // المدخل: مسطبة حجر
   put(new THREE.BoxGeometry(TILE * 1.5, 0.45, 0.5), M.stone, 9, 16, 0.5, 0.22, 0.85, { solid: true });
@@ -360,7 +408,8 @@ export function buildWorld(scene) {
   // شموع بترجف
   const candles = [];
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xffc070 });
-  for (const [tx, ty, ox, y, oz] of [[3, 8, 1.1, 0.38, 0.3], [21, 1, 0.4, 0.7, -0.8], [4, 1, -1.2, 0.9, -0.8]]) {
+  const candleSpots = [[3, 8, 1.1, 0.38, 0.3], [21, 1, 0.4, 0.7, -0.8], [4, 1, -1.2, 0.9, -0.8], [5, 16, 0.6, 0.02, 0.6], [14, 16, 0.4, 0.02, 0.5], [22, 7, 0.8, 0.9, -0.8]];
+  for (const [tx, ty, ox, y, oz] of candleSpots) {
     const p = C(tx, ty);
     const x = p.x + ox;
     const z = p.z + oz;
@@ -371,7 +420,7 @@ export function buildWorld(scene) {
     const light = new THREE.PointLight(0xff9a45, 3, 8, 1.8);
     light.position.set(x, y + 0.35, z);
     scene.add(light);
-    candles.push({ light, flame, base: 3, seed: Math.random() * 100 });
+    candles.push({ light, flame, base: 3, seed: Math.random() * 100, lit: true, room: roomAt(tx, ty), pos: { x, y: y + 0.3, z } });
   }
 
   let lightningT = 0;
@@ -384,6 +433,7 @@ export function buildWorld(scene) {
     gatePos: gp,
     update(dt, t) {
       for (const c of candles) {
+        if (!c.lit) continue;
         const f = 0.75 + Math.sin(t * 11 + c.seed) * 0.1 + Math.sin(t * 23.7 + c.seed) * 0.08 + (Math.random() - 0.5) * 0.12;
         c.light.intensity = c.base * f;
         c.flame.scale.set(1, 0.8 + f * 0.4, 1);
@@ -400,6 +450,12 @@ export function buildWorld(scene) {
     },
     lightning() {
       lightningT = 0.5;
+    },
+    // السعلوة بتطفي الشموع، واللاعب بيولّعها بالكبريت
+    setCandle(c, lit) {
+      c.lit = lit;
+      c.flame.visible = lit;
+      c.light.intensity = lit ? c.base : 0;
     },
     candles,
   };
@@ -449,6 +505,59 @@ export function pickupMesh(kind) {
     case 'bell':
       m = new THREE.Mesh(lathe([[0, 0.12], [0.02, 0.11], [0.04, 0.06], [0.07, 0], [0.065, 0]], 12), shine(0xd4a93a, 1));
       return m;
+    case 'key': {
+      m = new THREE.Group();
+      const brass = shine(0xb8862e, 1);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.2, 6), brass);
+      shaft.rotation.z = Math.PI / 2;
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.01, 6, 12), brass);
+      bow.position.x = -0.12;
+      bow.rotation.x = Math.PI / 2;
+      const bit = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.01, 0.05), brass);
+      bit.position.set(0.08, 0, 0.03);
+      m.add(shaft, bow, bit);
+      m.position.y = 0.015;
+      return m;
+    }
+    case 'water': {
+      m = new THREE.Group();
+      const glass = new THREE.MeshStandardMaterial({ color: 0x6f8f9a, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.55, emissive: 0x1a2a30 });
+      m.add(new THREE.Mesh(lathe([[0, 0], [0.07, 0], [0.08, 0.1], [0.05, 0.17], [0.025, 0.2], [0.025, 0.24]], 12), glass));
+      const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.02, 0.03, 8), M.woodDark);
+      cork.position.y = 0.25;
+      m.add(cork);
+      return m;
+    }
+    case 'matches':
+      m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.06), shine(0x8a2a1a, 0));
+      m.position.y = 0.015;
+      return m;
+    case 'salt':
+      m = new THREE.Mesh(lathe([[0, 0], [0.07, 0], [0.08, 0.12], [0.05, 0.16], [0, 0.17]], 10), shine(0xe8e4dc, 0));
+      return m;
+    case 'bead': {
+      m = new THREE.Group();
+      m.add(new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 8), shine(0x1f4fd8, 0.3)));
+      const eye = new THREE.Mesh(new THREE.CircleGeometry(0.018, 10), shine(0xffffff, 0));
+      eye.position.y = 0.041;
+      eye.rotation.x = -Math.PI / 2;
+      m.add(eye);
+      m.position.y = 0.04;
+      return m;
+    }
+    case 'recorder':
+    case 'tape': {
+      const big = kind === 'recorder';
+      m = new THREE.Group();
+      m.add(new THREE.Mesh(new THREE.BoxGeometry(big ? 0.3 : 0.1, big ? 0.08 : 0.012, big ? 0.18 : 0.065), shine(big ? 0x2a2a2a : 0x3a2a1a, 0.2)));
+      for (const x of [-1, 1]) {
+        const reel = new THREE.Mesh(new THREE.CylinderGeometry(big ? 0.035 : 0.014, big ? 0.035 : 0.014, big ? 0.085 : 0.014, 10), shine(0xd8d0c0, 0));
+        reel.position.x = x * (big ? 0.07 : 0.025);
+        m.add(reel);
+      }
+      m.position.y = big ? 0.04 : 0.008;
+      return m;
+    }
   }
   return m;
 }

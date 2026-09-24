@@ -1,6 +1,6 @@
 // اللاعب: الحركة، التحمّل، الانحناء، الكشاف، والاختباء.
 import * as THREE from 'three';
-import { TILE, isWalkable, worldToTile, tileCenter, isWall } from './world/map.js';
+import { TILE, HIDE_KINDS, isWalkable, worldToTile, tileCenter, isWall } from './world/map.js';
 
 const RADIUS = 0.35;
 const EYE = 1.6;
@@ -48,6 +48,10 @@ export class Player {
     this.battery = 1;
     this.flashlightOn = true;
     this.hidden = null; // المخبأ الحالي
+    this.holdingBreath = false;
+    this.matchT = 0; // عود كبريت مولّع (ثواني)
+    this.sensitivity = 1;
+    this.invertY = false;
     this.bobT = 0;
     this.stepAcc = 0;
 
@@ -64,6 +68,11 @@ export class Player {
     camera.add(spot, spot.target);
     const glow = new THREE.PointLight(0xfff1d0, 0.25, 3.5, 2); // ارتداد خفيف حوالين اللاعب
     camera.add(glow);
+    // عود الكبريت: ضوء دافي صغير بيرجف
+    const match = new THREE.PointLight(0xffa040, 0, 7, 1.6);
+    match.position.set(0.25, -0.25, -0.4);
+    camera.add(match);
+    this.match = match;
     this.spot = spot;
     this.glow = glow;
     scene.add(camera);
@@ -74,7 +83,19 @@ export class Player {
     this.pos.set(p.x, 0, p.z);
   }
 
+  // مصدر الضوء اللي بتشوفه السعلوة
+  get light() {
+    if (this.flashlightOn && this.battery > 0) return 'flash';
+    return this.matchT > 0 ? 'match' : null;
+  }
+
+  lightMatch(seconds = 25) {
+    this.matchT = seconds;
+  }
+
   look(dx, dy) {
+    dx *= this.sensitivity;
+    dy *= this.sensitivity * (this.invertY ? -1 : 1);
     if (this.hidden) {
       // جوّا المخبأ: نظر محدود من الفتحة
       this.yaw = THREE.MathUtils.clamp(this.yaw - dx * 0.002, this.hidden.yaw - 0.5, this.hidden.yaw + 0.5);
@@ -102,9 +123,22 @@ export class Player {
     if (this.flashlightOn && this.battery > 0) this.battery = Math.max(0, this.battery - dt / this.cfg.batterySeconds);
     this.spot.intensity = lightTarget * (0.4 + 0.6 * Math.min(1, this.battery * 4));
     this.glow.intensity = lightTarget ? 0.25 : 0;
+    if (this.matchT > 0) {
+      this.matchT -= dt;
+      const dying = this.matchT < 3 ? this.matchT / 3 : 1;
+      this.match.intensity = (2.2 + Math.sin(performance.now() * 0.03) * 0.3 + (Math.random() - 0.5) * 0.5) * dying;
+    } else this.match.intensity = 0;
 
     if (this.hidden) {
-      this.stamina = Math.min(1, this.stamina + dt * 0.15);
+      // حبس النفَس بيستهلك التحمّل، ولما يخلص بتشهق غصب عنك
+      if (this.holdingBreath) {
+        this.stamina -= dt / 5;
+        if (this.stamina <= 0) {
+          this.stamina = 0;
+          this.holdingBreath = false;
+          out.gasp = true;
+        }
+      } else this.stamina = Math.min(1, this.stamina + dt * 0.15);
       this.#applyCamera(dt, 0, fear);
       return out;
     }
@@ -189,7 +223,7 @@ export class Player {
     this.hidden = {
       spot,
       yaw,
-      eye: spot.kind === 'bed' ? 0.35 : 1.4,
+      eye: HIDE_KINDS[spot.kind].eye,
       pos: new THREE.Vector3(c.x + open[0] * TILE * 0.3, 0, c.z + open[1] * TILE * 0.3),
     };
     this.yaw = yaw;
@@ -200,6 +234,7 @@ export class Player {
   exitHide() {
     if (!this.hidden) return;
     this.hidden = null;
+    this.holdingBreath = false;
     this.place(this.exitTile.x, this.exitTile.y);
   }
 }

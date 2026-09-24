@@ -5,6 +5,7 @@ export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.speaking = false; // لما السعلوة بتحكي أو بتقلّد: نسكّر أذن المايك حتى ما تسمع حالها
+    this.screamScale = 1; // إعداد "تقليل الصراخ المفاجئ"
   }
 
   start() {
@@ -156,10 +157,12 @@ export class AudioEngine {
   playAt(kind, pos, vol = 1) {
     if (!this.ctx) return;
     const h = { shriek: 'scream', laugh: 'laugh', whisper: 'whisper', growl: 'growl', creak: 'creak', drip: 'drip' }[kind];
+    if (kind === 'shriek') vol *= this.screamScale;
     if (h) return horror[h](this, pos, vol);
     if (kind === 'grab') {
-      horror.scream(this, null, 1.2);
-      horror.sting(this, 1.3);
+      vol *= this.screamScale;
+      horror.scream(this, null, 1.2 * this.screamScale);
+      horror.sting(this, 1.3 * this.screamScale);
     }
     const ctx = this.ctx;
     const out = pos ? this.panner(pos) : this.master;
@@ -258,6 +261,66 @@ export class AudioEngine {
         env(0.2, 1.5, 0.3);
         noise(1.7, 'bandpass', 2500);
         break;
+      case 'slam': // باب بينصفق
+        g.gain.value = vol * 1.4;
+        this.#thumpAt(g, t);
+        this.#thumpAt(g, t + 0.06);
+        horror.creak(this, pos, 0.5 * vol);
+        break;
+      case 'toys': { // علبة موسيقى بتدق لحالها
+        g.gain.value = vol * 0.25;
+        [0, 4, 7, 12, 7, 4, 11].forEach((semi, i) => {
+          const o = ctx.createOscillator();
+          const og = ctx.createGain();
+          const tt = t + i * 0.32 * (1 + i * 0.08); // بتبطّى متل اللي خلص زمبركها
+          o.frequency.value = 1046 * Math.pow(2, semi / 12);
+          og.gain.setValueAtTime(0.0001, tt);
+          og.gain.exponentialRampToValueAtTime(1, tt + 0.005);
+          og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.6);
+          o.connect(og).connect(g);
+          o.start(tt);
+          o.stop(tt + 0.65);
+        });
+        break;
+      }
+      case 'ring': // رنّة تلفون قديم (جرسين بسرعة)
+        g.gain.value = vol * 0.3;
+        for (const off of [0, 0.4]) {
+          for (let k = 0; k < 14; k++) {
+            const o = ctx.createOscillator();
+            const og = ctx.createGain();
+            const tt = t + off + k * 0.025;
+            o.type = 'square';
+            o.frequency.value = k % 2 ? 1150 : 1300;
+            og.gain.setValueAtTime(0.5, tt);
+            og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.024);
+            o.connect(og).connect(g);
+            o.start(tt);
+            o.stop(tt + 0.03);
+          }
+        }
+        break;
+      case 'teleport': // سحبة معكوسة: إنذار إنها اختفت أو ظهرت
+        env(1.2, 0.25, 0.5);
+        noise(1.5, 'bandpass', 700);
+        osc('sawtooth', 60, 400, 1.4);
+        break;
+      case 'match': // حكّة عود كبريت
+        env(0.005, 0.5, 0.3);
+        noise(0.55, 'highpass', 2500);
+        break;
+      case 'salt': // رشّة ملح
+        env(0.05, 0.9, 0.12);
+        noise(1, 'highpass', 5000);
+        break;
+      case 'gasp': // شهقة بعد حبس النفَس
+        env(0.03, 0.5, 0.45);
+        noise(0.55, 'bandpass', 1400);
+        break;
+      case 'click': // زر المسجّل
+        env(0.001, 0.05, 0.4);
+        noise(0.06, 'bandpass', 3000);
+        break;
     }
   }
 
@@ -296,8 +359,63 @@ export class AudioEngine {
     return g;
   }
 
+  // راديو قديم: تشويش ولحن مشوّه، بيرجع دالة لإطفائه
+  radio(pos, seconds = 20) {
+    const ctx = this.ctx;
+    const p = this.panner(pos);
+    const g = ctx.createGain();
+    g.gain.value = 0.35;
+    g.connect(p);
+    const st = this.#noiseSrc();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800;
+    bp.Q.value = 0.6;
+    const sg = ctx.createGain();
+    sg.gain.value = 0.35;
+    st.connect(bp).connect(sg).connect(g);
+    st.start();
+    // لحن عود بعيد (مقام حجاز) بيطلع وبيغيب بالتشويش
+    const notes = [0, 1, 4, 5, 7, 5, 4, 1, 0, -1, 0];
+    let i = 0;
+    let alive = true;
+    const pluck = () => {
+      if (!alive) return;
+      const t = this.now;
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 196 * Math.pow(2, notes[i++ % notes.length] / 12) * (1 + (Math.random() - 0.5) * 0.02);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(0.5 * (0.3 + Math.random() * 0.7), t + 0.01);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      o.connect(og).connect(g);
+      o.start(t);
+      o.stop(t + 0.75);
+      setTimeout(pluck, 380 + Math.random() * 250);
+    };
+    pluck();
+    const stop = () => {
+      if (!alive) return;
+      alive = false;
+      g.gain.setTargetAtTime(0, this.now, 0.05);
+      setTimeout(() => {
+        st.stop();
+        p.disconnect();
+      }, 300);
+    };
+    setTimeout(stop, seconds * 1000);
+    return stop;
+  }
+
+  // صوت الجدة بالأشرطة والتلفون: قراءة آلية أهدى، مع خشخشة شريط
+  grandma(text, pos) {
+    if (pos) this.playAt('whisper', pos, 0.3);
+    this.speak(text, null, 'ar', { pitch: 0.7, rate: 0.85, volume: 0.8 });
+  }
+
   // صوت السعلوة وهي تحكي: قراءة آلية بصوت ثقيل كمرحلة أولى + همس مكاني
-  speak(text, pos, lang = 'ar') {
+  speak(text, pos, lang = 'ar', { pitch = 0.1, rate = 0.75, volume = 0.9 } = {}) {
     if (pos) horror.whisper(this, pos, 0.9, 2.5);
     const synth = window.speechSynthesis;
     if (!synth) return;
@@ -305,9 +423,9 @@ export class AudioEngine {
     u.lang = lang === 'ar' ? 'ar-SA' : 'en-US';
     const v = synth.getVoices().find((x) => x.lang?.startsWith(lang));
     if (v) u.voice = v;
-    u.pitch = 0.1;
-    u.rate = 0.75;
-    u.volume = 0.9;
+    u.pitch = pitch;
+    u.rate = rate;
+    u.volume = volume;
     this.speaking = true;
     u.onend = u.onerror = () => (this.speaking = false);
     synth.cancel();

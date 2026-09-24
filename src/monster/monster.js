@@ -1,9 +1,9 @@
 // السعلوة: حالات السلوك، الحواس (سمع/بصر/شم)، والحركة على الشبكة.
 import * as THREE from 'three';
 import {
-  TILE, HIDE_SPOTS, MONSTER_LAIR, ROOMS, findPath, lineOfSight, tileCenter, worldToTile, roomAt, roomTiles, isWalkable,
+  TILE, HIDE_SPOTS, HIDE_KINDS, MONSTER_LAIR, ROOMS, findPath, lineOfSight, tileCenter, worldToTile, roomAt, roomTiles, isWalkable,
 } from '../world/map.js';
-import { hideSearchOrder, hottestRoute } from './memory.js';
+import { hideSearchOrder, hottestRoute, favoriteHide } from './memory.js';
 import { buildBody, animateBody } from './body.js';
 
 export class Monster {
@@ -26,6 +26,9 @@ export class Monster {
     this.opening = null;
     this.onCatch = null;
     this.onState = null;
+    this.onSalt = null; // لما خط ملح يوقفها
+    this.avoid = new Set(); // خانات الملح
+    this.spots = HIDE_SPOTS; // المخابئ المتاحة بهالليلة
     this.t = 0;
     const c = tileCenter(MONSTER_LAIR.x, MONSTER_LAIR.y);
     this.pos.set(c.x, 0, c.z);
@@ -47,8 +50,16 @@ export class Monster {
     Object.assign(this, extra);
   }
 
+  place(tile) {
+    const c = tileCenter(tile.x, tile.y);
+    this.pos.set(c.x, 0, c.z);
+    this.path = null;
+    this.direct = null;
+  }
+
   #goTo(tile) {
-    this.path = findPath(this.tile(), tile);
+    this.path = findPath(this.tile(), tile, this.avoid.size ? this.avoid : null);
+    if (!this.path && this.avoid.size && findPath(this.tile(), tile)) this.onSalt?.();
     if (this.path) this.path.shift();
     return !!this.path;
   }
@@ -86,11 +97,13 @@ export class Monster {
     const dx = player.pos.x - this.pos.x;
     const dz = player.pos.z - this.pos.z;
     const d = Math.hypot(dx, dz);
-    const lit = player.flashlightOn && player.battery > 0;
-    let range = lit ? 18 * (1 + this.mem.flashlightRatio * 0.3) : player.crouch ? 3.5 : 6.5;
+    const light = player.light; // 'flash' | 'match' | null
+    let range = light === 'flash' ? 18 * (1 + this.mem.flashlightRatio * 0.3) : light === 'match' ? 9 : player.crouch ? 3.5 : 6.5;
     const pt = player.tile();
     if (roomAt(pt.x, pt.y) === 'c') range += 3; // ضوء القمر بالحوش
+    if (player.inCandleLight) range = Math.max(range, 9); // ضو الشمعة بيبيّنك
     range *= this.cfg.sight;
+    if (this.hour >= 4) range *= 0.75; // قرب الفجر بتعمى شوي
     if (d > range) return false;
     if (d > 2.5) {
       const dot = (dx * this.facing.x + dz * this.facing.z) / d;
@@ -106,9 +119,29 @@ export class Monster {
     if (!this.#goTo(tile)) this.#set('wander');
   }
 
-  retreat() {
-    this.#set('retreat', { waitFor: 12, waiting: false });
+  retreat(pause = 0) {
+    this.#set('retreat', { waitFor: 12, waiting: false, opening: null, direct: null });
     this.#goTo(MONSTER_LAIR);
+    this.pause = pause;
+  }
+
+  // الخرزة الزرقاء: بتنصدم وبتتراجع، واللاعب عنده 5 ثواني يهرب
+  stun(seconds = 5) {
+    this.retreat(seconds);
+  }
+
+  // بتختفي وبتظهر بمكان ثاني (نادر، ودايماً بصوت إنذار من اللعبة)
+  teleport(tile) {
+    this.place(tile);
+    this.#set('wander');
+  }
+
+  // ستارة وضوّك شغّال: بيبيّن من وراها
+  #exposed(player) {
+    const h = player.hidden;
+    if (!h || !HIDE_KINDS[h.spot.kind].lightExposed || !player.light) return false;
+    const d = this.pos.distanceTo(h.pos);
+    return d < 10 * this.cfg.sight && lineOfSight(this.pos.x, this.pos.z, h.pos.x, h.pos.z);
   }
 
   update(dt, player, ctx) {
@@ -120,6 +153,10 @@ export class Monster {
     if (sees && this.state !== 'retreat') {
       if (this.state !== 'chase') this.#set('chase', { chaseTime: 0 });
       this.lastSeen = player.pos.clone();
+    }
+    if (this.state !== 'retreat' && this.state !== 'search' && this.#exposed(player)) {
+      const c = player.hidden.pos;
+      this.#beginSearch({ x: c.x, z: c.z }, player, player.hidden.spot);
     }
 
     switch (this.state) {
@@ -203,18 +240,21 @@ export class Monster {
     this.pause = Math.random() < 0.3 ? 0.6 + Math.random() : 0;
   }
 
-  #beginSearch(center, player) {
+  #beginSearch(center, player, first = null) {
     if (!center) return this.#set('wander');
     // المخابئ القريبة، مرتبة حسب شو تعلّمت (مع الشمّ: اللي قاعد فيه من زمان)
-    const near = HIDE_SPOTS.filter((s) => {
+    const near = this.spots.filter((s) => {
       const c = tileCenter(s.x, s.y);
       return Math.hypot(c.x - center.x, c.z - center.z) < 14;
     });
     let order = hideSearchOrder(this.mem, near);
     if (this.cfg.adapt === 0) order = near.sort(() => Math.random() - 0.5);
-    if (player.hidden && player.hiddenFor > 25 && near.includes(player.hidden.spot)) {
-      order = [player.hidden.spot, ...order.filter((s) => s !== player.hidden.spot)];
-    }
+    // السحّارة آخر شي، إلا إذا صارت تعرفها
+    const fav = favoriteHide(this.mem);
+    order = [...order.filter((s) => !HIDE_KINDS[s.kind].lowPriority || s.id === fav), ...order.filter((s) => HIDE_KINDS[s.kind].lowPriority && s.id !== fav)];
+    const smell = player.hidden && player.hiddenFor > (HIDE_KINDS[player.hidden.spot.kind].lowPriority ? 40 : 25);
+    if (smell && near.includes(player.hidden.spot)) first = player.hidden.spot;
+    if (first) order = [first, ...order.filter((s) => s !== first)];
     this.searchQueue = order.slice(0, 1 + Math.min(2, Math.floor(this.hour / 2) + 1));
     this.#set('search', { opening: null });
     if (!this.searchQueue.length) this.#set('wander');
@@ -223,11 +263,18 @@ export class Monster {
   #search(dt, player) {
     if (this.opening) {
       this.opening.t += dt;
-      if (this.opening.t > 1.1) {
+      const kind = HIDE_KINDS[this.opening.spot.kind];
+      if (this.opening.t > kind.open) {
         const spot = this.opening.spot;
         this.opening = null;
         this.onOpen?.(spot, false);
         if (player.hidden?.spot === spot) {
+          // حبس النفَس: فرصة إنها ما تحسّ فيك (أقل إذا هاد مخبأك المعروف)
+          const save = kind.breathSave * (favoriteHide(this.mem) === spot.id ? 0.5 : 1);
+          if (player.holdingBreath && Math.random() < save) {
+            this.onMiss?.(spot);
+            return;
+          }
           this.onCatch?.('hide', spot);
           return;
         }
@@ -242,6 +289,9 @@ export class Monster {
     }
     const here = this.tile();
     if (Math.abs(here.x - next.x) + Math.abs(here.y - next.y) <= 1) {
+      // باب بيتسكّر: بتكسره بس إذا شاكّة فعلاً
+      const sure = player.hidden?.spot === next && (player.hiddenFor > 25 || favoriteHide(this.mem) === next.id);
+      if (HIDE_KINDS[next.kind].locks && !sure && Math.random() < 0.5) return;
       this.opening = { spot: next, t: 0 };
       this.onOpen?.(next, true);
       const c = tileCenter(next.x, next.y);
@@ -264,6 +314,16 @@ export class Monster {
     const dz = c.z - this.pos.z;
     const d = Math.hypot(dx, dz);
     const step = this.speed * dt;
+    // ما بتقطع خط الملح حتى لو كانت هاجمة مباشرة
+    if (this.avoid.size && d > 0) {
+      const ahead = worldToTile(this.pos.x + (dx / d) * 0.6, this.pos.z + (dz / d) * 0.6);
+      if (this.avoid.has(`${ahead.x},${ahead.y}`)) {
+        this.onSalt?.();
+        this.path = null;
+        this.direct = null;
+        return;
+      }
+    }
     if (d <= step) {
       this.pos.x = c.x;
       this.pos.z = c.z;

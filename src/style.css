@@ -232,3 +232,131 @@ button.ghost {
   padding-right: 18px;
   line-height: 1.9;
 }
+details.box summary {
+  cursor: pointer;
+  color: var(--gold);
+}
+.box input[type='range'] {
+  vertical-align: middle;
+  width: 140px;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#bag {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  direction: ltr;
+}
+#bag .slot {
+  width: 54px;
+  height: 54px;
+  border: 1px solid #3a2e22;
+  background: rgba(10, 8, 6, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  position: relative;
+  opacity: 0.75;
+}
+#bag .slot.sel {
+  border-color: var(--gold);
+  opacity: 1;
+}
+#bag .slot small {
+  position: absolute;
+  font-size: 10px;
+  color: var(--dim);
+}
+#bag .slot .n {
+  bottom: 2px;
+  right: 4px;
+}
+#bag .slot .k {
+  top: 2px;
+  left: 4px;
+}
+#breath {
+  position: absolute;
+  top: 64%;
+  width: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: #9ab;
+}
+#hideMask {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+#hideMask.blind {
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.9) 0 3%, #000 4%);
+}
+#hideMask.curtain {
+  background: linear-gradient(90deg, rgba(40, 6, 6, 0.95) 0 40%, rgba(40, 6, 6, 0.4) 48% 52%, rgba(40, 6, 6, 0.95) 60%);
+}
+#toasts {
+  position: fixed;
+  top: 60px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 20;
+  pointer-events: none;
+}
+#toasts div {
+  background: rgba(20, 14, 10, 0.9);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 6px 14px;
+  font-size: 14px;
+  animation: toast 4s forwards;
+}
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  10%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.story p {
+  margin: 4px 0;
+  line-height: 1.8;
+}
+.story .en,
+.tape .en {
+  direction: ltr;
+  text-align: left;
+  font-size: 12px;
+  color: var(--dim);
+}
+.tape {
+  border-top: 1px solid #2a221a;
+  padding: 8px 0;
+}
+.tape.locked {
+  color: #4a4036;
+}
+.tape .note {
+  color: var(--gold);
+  font-size: 13px;
+}
+.ach li.off {
+  color: #4a4036;
+}

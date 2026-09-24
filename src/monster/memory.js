@@ -15,6 +15,7 @@ export function emptyMemory() {
     flashlightRatio: 0.5,
     loudness: 0, // صراخ بالدقيقة
     lastDeath: null, // { cause: 'hide'|'chase', spot, room }
+    lureTricks: 0, // كم مرة خدعتها بالراديو أو المسجّل (بتتعلّم تتجاهلهم)
     bestSurvival: 0,
   };
 }
@@ -62,6 +63,15 @@ export function noteHide(mem, spotId) {
 
 export function noteRoute(mem, x, y, amount = 1) {
   mem.routeHeat[y * W + x] += amount;
+}
+
+export function noteLure(mem) {
+  mem.lureTricks += 1;
+}
+
+// فرصة إنها تتجاهل صوت تشتيت (جرس/راديو/مسجّل)
+export function lureIgnoreChance(mem, runUses, adapt = 1) {
+  return Math.min(0.8, (Math.max(0, runUses - 1) * 0.2 + mem.lureTricks * 0.06) * adapt);
 }
 
 export function noteRoom(mem, room, amount = 1) {
@@ -116,6 +126,7 @@ export function learnedSummary(mem, spotsById, rooms) {
   if (mem.runRatio > 0.35) out.push('بتركض كثير… وبتسمع خطواتك من بعيد');
   if (mem.flashlightRatio > 0.7) out.push('الكشاف دايماً شغّال… ضوّك بيفضحك');
   if (mem.loudness > 0.6) out.push('بتصرّخ كثير… وصوتك صار عندها');
+  if (mem.lureTricks >= 3) out.push('صارت تعرف حيلة الراديو والمسجّل');
   const room = favoriteRoom(mem);
   if (room) out.push(`أول ما تدخل بتروح على ${rooms[room]?.ar ?? room}`);
   return out;

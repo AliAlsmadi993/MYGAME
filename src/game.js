@@ -1,7 +1,8 @@
-// الجولة الواحدة (ليلة): الوقت، الأغراض، الضجيج، التمسخر، التقليد، الفوز والموت.
+// الجولة الواحدة (ليلة): الوقت، الأغراض والأدوات، الضجيج، التمسخر، التقليد، الأحداث، الفوز والموت.
 import * as THREE from 'three';
 import {
-  HIDE_SPOTS, ITEMS, ROOMS, WELL, GATE, PLAYER_START, TILE, roomTiles, roomAt, tileCenter, worldToTile, isWall, findPath,
+  HIDE_SPOTS, HIDE_KINDS, ITEMS, ROOMS, WELL, GATE, PLAYER_START, RADIO, PHONE, NEST, MONSTER_STARTS, TILE,
+  roomTiles, roomAt, tileCenter, worldToTile, isWall, findPath, doorTiles, lineOfSight,
 } from './world/map.js';
 import { buildWorld, pickupMesh } from './world/build.js';
 import { Player } from './player.js';
@@ -12,13 +13,20 @@ import { levelToNoise } from './audio/mic.js';
 import { DAWN_HOUR } from './config.js';
 import { createPost } from './post.js';
 import { horror } from './audio/horror.js';
+import { Bag, TOOLS } from './inventory.js';
+import { Director, pickScare } from './director.js';
+import { tapesForNight } from './story/tapes.js';
+import { resolveEnding, ENDINGS } from './story/endings.js';
+import { noteTape, saveProgress, finishRun, recorderUnlocked } from './progress.js';
 
-const HIDE_LABELS = { wardrobe: 'الخزانة', bed: 'تحت السرير' };
-export const spotLabel = (s) => `${HIDE_LABELS[s.kind]} (${ROOMS[s.room].ar})`;
+export const spotLabel = (s) => `${HIDE_KINDS[s.kind].ar} (${ROOMS[s.room].ar})`;
+const SALT_SECONDS = 45;
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
 export class Game {
-  constructor({ renderer, audio, mic, mimic, cfg, mem, ui }) {
-    Object.assign(this, { renderer, audio, mic, mimic, cfg, mem, ui });
+  constructor({ renderer, audio, mic, mimic, cfg, mem, progress, settings, ui }) {
+    Object.assign(this, { renderer, audio, mic, mimic, cfg, mem, progress, settings, ui });
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 80);
     const world = (this.world = buildWorld(this.scene));
@@ -26,14 +34,30 @@ export class Game {
     this.post = createPost(renderer, this.scene, this.camera);
     this.player = new Player(this.camera, this.scene, cfg, world.colliders);
     this.player.place(PLAYER_START.x, PLAYER_START.y);
+    this.player.sensitivity = settings.sensitivity;
+    this.player.invertY = settings.invertY;
+    audio.screamScale = settings.reduceScreams ? 0.45 : 1;
+
+    // الليلة الثانية: مخبأ أو أكثر مسكّر بمسامير
+    this.sealed = new Set();
+    const wardrobes = HIDE_SPOTS.filter((s) => s.kind === 'wardrobe').sort(() => Math.random() - 0.5);
+    for (const s of wardrobes.slice(0, cfg.sealed)) {
+      this.sealed.add(s.id);
+      this.#nailShut(s);
+    }
+
     this.monster = new Monster(this.scene, audio, cfg, mem);
-    this.monster.onCatch = (cause, spot) => this.#die(cause, spot);
+    this.monster.spots = HIDE_SPOTS.filter((s) => !this.sealed.has(s.id));
+    this.monster.place(pick(MONSTER_STARTS));
+    this.monster.onCatch = (cause, spot) => this.#caught(cause, spot);
     this.monster.onOpen = (spot, opening) => this.#animateOpen(spot, opening);
+    this.monster.onSalt = () => this.#saltBlocked();
+    this.monster.onMiss = () => this.#taunt('miss');
     this.monster.onState = (s, prev) => {
       this.ui.debug?.(s);
       // أول ما تشوفك: نغمة فزع وخرخرة
       if (s === 'chase' && prev !== 'chase') {
-        horror.sting(audio, 1);
+        horror.sting(audio, this.audio.screamScale);
         const mp = this.monster.pos;
         setTimeout(() => horror.growl(audio, { x: mp.x, y: 2, z: mp.z }, 1), 300);
       }
@@ -43,12 +67,15 @@ export class Game {
     this.state = 'play';
     this.carried = new Set();
     this.placed = new Set();
+    this.ankletReturned = false;
     this.gateOpen = false;
-    this.bells = cfg.bells;
+    this.bag = new Bag();
+    this.bag.add('bell', cfg.bells);
     this.usedTaunts = new Set();
+    this.favHideAtStart = M.favoriteHide(mem);
     this.stats = {
       time: 0, moveTime: 0, sprintTime: 0, flashlightTime: 0, heard: 0, screams: 0, loudestDb: -100, mimics: 0, hideUses: {},
-      deathCause: null, bellsThrown: 0,
+      deathCause: null, bellsThrown: 0, spoke: false, beadSaved: false, saltBlocked: false, tapes: [], lures: 0,
     };
     this.lastRunClip = null;
     this.noiseCd = 0;
@@ -57,16 +84,23 @@ export class Game {
     this.lastRoom = null;
     this.routeCd = 0;
     this.pantCd = 0;
+    this.breathNoiseCd = 0;
     this.nextTaunt = 70;
     this.nextMimic = null;
-    this.nextScare = 50;
     this.climaxDone = false;
     this.nextLightning = 25 + Math.random() * 30;
     this.nextCreak = 8;
     this.nextDrip = 3;
     this.nextHowl = 60;
+    this.nextTeleport = 90;
     this.breathCd = 0;
     this.inhale = true;
+    this.director = new Director();
+    this.salt = []; // { key, until, mesh }
+    this.radio = { on: false, stop: null, uses: 0 };
+    this.phone = { ringing: false, until: 0, next: 0 };
+    this.recorders = [];
+    this.lureUses = 0;
 
     this.pickups = [];
     this.#spawnPickups();
@@ -77,11 +111,20 @@ export class Game {
   start() {
     this.monster.initAudio();
     setTimeout(() => this.#taunt('start'), 4000);
-    this.ui.subtitle('لازم ترجّع غراض ستّك الثلاثة للبير بالحوش… أو تصمد للفجر.', 'Return grandma\'s three things to the well… or survive until dawn.', 6);
+    this.ui.subtitle(
+      `لازم ترجّع غراض ستّك الخمسة للبير بالحوش… أو تصمد للفجر.`,
+      "Return grandma's five things to the well… or survive until dawn.",
+      6,
+    );
+    if (this.sealed.size) setTimeout(() => this.ui.subtitle('في خزانة مسكّرة بمسامير… مين سكّرها؟', 'A wardrobe is nailed shut… who did that?', 4), 8000);
   }
 
   get hour() {
     return this.time / this.cfg.hourSeconds;
+  }
+
+  get needed() {
+    return ITEMS.length - (this.ankletReturned ? 1 : 0);
   }
 
   // ---------- الأغراض ----------
@@ -90,28 +133,38 @@ export class Game {
     const place = (kind, rooms, extra = {}) => {
       const blocked = this.world.blockedTiles;
       const tiles = rooms.flatMap((r) => roomTiles(r)).filter((t) => !taken.has(`${t.x},${t.y}`) && !blocked.has(`${t.x},${t.y}`));
-      const t = tiles[Math.floor(Math.random() * tiles.length)];
+      const t = pick(tiles);
       taken.add(`${t.x},${t.y}`);
       const c = tileCenter(t.x, t.y);
-      const mesh = pickupMesh(kind);
-      mesh.position.x = c.x + (Math.random() - 0.5);
-      mesh.position.z = c.z + (Math.random() - 0.5);
-      mesh.traverse((o) => (o.castShadow = true));
-      this.scene.add(mesh);
-      // لمعة صغيرة بتبيّن لما الكشاف يوقع عليها
-      if (extra.item) {
-        const sp = new THREE.Sprite(this.#sparkMat());
-        sp.scale.set(0.12, 0.12, 1);
-        sp.position.set(mesh.position.x, 0.12, mesh.position.z);
-        this.scene.add(sp);
-        extra.spark = sp;
-      }
-      this.pickups.push({ kind, mesh, ...extra });
+      this.#dropPickup(kind, c.x + (Math.random() - 0.5), c.z + (Math.random() - 0.5), extra);
     };
-    for (const it of ITEMS) place(it.id, it.rooms, { item: it });
+    for (const it of ITEMS) place(it.id, it.rooms, { item: it, glint: true });
     const all = Object.keys(ROOMS);
-    for (let i = 0; i < this.cfg.batteries; i++) place('battery', all);
+    const cfg = this.cfg;
+    for (let i = 0; i < cfg.batteries; i++) place('battery', all);
     for (let i = 0; i < 2; i++) place('bell', all);
+    place('matches', ['k', 'l', 'b']);
+    for (let i = 0; i < cfg.salt; i++) place('salt', ['k', 'd', 'a']);
+    if (Math.random() < cfg.bead) place('bead', all);
+    if (recorderUnlocked(this.progress)) place('recorder', ['a', 'l']);
+    for (const tape of tapesForNight(this.progress.tapes, 2)) place('tape', all, { tape, glint: true });
+  }
+
+  #dropPickup(kind, x, z, extra = {}) {
+    const mesh = pickupMesh(kind);
+    mesh.position.x = x;
+    mesh.position.z = z;
+    mesh.traverse((o) => (o.castShadow = true));
+    this.scene.add(mesh);
+    // لمعة صغيرة بتبيّن لما الكشاف يوقع عليها
+    if (extra.glint) {
+      const sp = new THREE.Sprite(this.#sparkMat());
+      sp.scale.set(0.12, 0.12, 1);
+      sp.position.set(x, 0.12, z);
+      this.scene.add(sp);
+      extra.spark = sp;
+    }
+    this.pickups.push({ kind, mesh, ...extra });
   }
 
   #sparkMat() {
@@ -132,6 +185,12 @@ export class Game {
     return this.sparkMaterial;
   }
 
+  #pickupLabel(pk) {
+    if (pk.item) return pk.item.ar;
+    if (pk.tape) return `شريط كاسيت: ${pk.tape.title.ar}`;
+    return TOOLS[pk.kind].ar;
+  }
+
   // ---------- التفاعل ----------
   #interactTarget() {
     const p = this.player;
@@ -147,16 +206,28 @@ export class Game {
     const consider = (obj, d) => {
       if (d !== null && (!best || d < best.d)) best = { ...obj, d };
     };
-    for (const pk of this.pickups) consider({ type: 'pickup', pk, label: `التقط: ${pk.item?.ar ?? (pk.kind === 'bell' ? 'جرس' : 'بطارية')}` }, near(pk.mesh.position.x, pk.mesh.position.z, 1.8));
+    const at = (t, max, oz = 0) => {
+      const c = tileCenter(t.x, t.y);
+      return near(c.x, c.z + oz, max);
+    };
+    for (const pk of this.pickups) consider({ type: 'pickup', pk, label: `التقط: ${this.#pickupLabel(pk)}` }, near(pk.mesh.position.x, pk.mesh.position.z, 1.8));
     for (const s of HIDE_SPOTS) {
-      const c = tileCenter(s.x, s.y);
-      consider({ type: 'hide', spot: s, label: `اختبئ: ${HIDE_LABELS[s.kind]}` }, near(c.x, c.z, 2.7));
+      const sealed = this.sealed.has(s.id);
+      consider({ type: sealed ? 'none' : 'hide', spot: s, label: sealed ? 'مسكّرة بمسامير…' : `اختبئ: ${HIDE_KINDS[s.kind].ar}` }, at(s, 2.7));
     }
-    const w = tileCenter(WELL.x, WELL.y);
-    if (this.carried.size) consider({ type: 'well', label: 'ارمِ الأغراض بالبير' }, near(w.x, w.z, 2.7));
-    const g = tileCenter(GATE.x, GATE.y);
-    consider({ type: 'gate', label: this.gateOpen ? 'اهرب!' : 'البوابة مقفلة… كمّل الطقس أول' }, near(g.x, g.z - TILE * 0.5, 2.2));
+    if (this.carried.size) consider({ type: 'well', label: 'ارمِ الأغراض بالبير' }, at(WELL, 2.7));
+    if (this.carried.has('anklet')) consider({ type: 'nest', label: 'رجّعلها خلخالها لعشّها' }, at(NEST, 2.2));
+    consider({ type: 'gate', label: this.gateOpen ? 'اهرب!' : 'البوابة مقفلة… كمّل الطقس أول' }, at(GATE, 2.2, -TILE * 0.5));
+    consider({ type: 'radio', label: this.radio.on ? 'طفّي الراديو' : 'شغّل الراديو (بيشتّتها… وبتتعلّم)' }, near(...this.#radioXZ(), 1.9));
+    if (this.phone.ringing) consider({ type: 'phone', label: 'ردّ عالتلفون' }, at(PHONE, 2.2, -0.7));
+    if (this.bag.count('matches'))
+      for (const c of this.world.candles) if (!c.lit) consider({ type: 'candle', candle: c, label: 'ولّع الشمعة (عود كبريت)' }, near(c.pos.x, c.pos.z, 1.8));
     return best;
+  }
+
+  #radioXZ() {
+    const c = tileCenter(RADIO.x, RADIO.y);
+    return [c.x - 0.7, c.z + 0.7];
   }
 
   interact() {
@@ -169,52 +240,121 @@ export class Game {
         p.exitHide();
         this.#noise({ radius: 3, precision: 1 });
         break;
-      case 'hide':
+      case 'hide': {
         p.enterHide(t.spot);
         p.hiddenFor = 0;
         this.stats.hideUses[t.spot.id] = (this.stats.hideUses[t.spot.id] || 0) + 1;
+        if (t.spot.id === this.favHideAtStart) this.stats.usedFav = true;
         // التمسخر قبل ما نسجّل: بتعلّق بس إذا المكان كان مفضّل من قبل
-        if (Math.random() < 0.5) this.#taunt('hide', { hideId: t.spot.id });
+        if (Math.random() < 0.5) this.#taunt('hide', { hideId: t.spot.id, hideKind: t.spot.kind, lit: !!p.light });
         M.noteHide(this.mem, t.spot.id);
-        break;
-      case 'pickup': {
-        const pk = t.pk;
-        this.scene.remove(pk.mesh);
-        if (pk.spark) this.scene.remove(pk.spark);
-        this.pickups.splice(this.pickups.indexOf(pk), 1);
-        this.audio.playAt('pickup');
-        if (pk.item) {
-          this.carried.add(pk.item.id);
-          // السعلوة بتعرف فوراً وبتصرّخ
-          const mp = this.monster.pos;
-          this.audio.playAt('shriek', { x: mp.x, y: 2, z: mp.z });
-          this.#taunt(pk.item.id === 'anklet' ? 'anklet' : 'item');
-          this.ui.subtitle(`أخذت ${pk.item.ar}`, pk.item.en, 3);
-        } else if (pk.kind === 'battery') {
-          p.battery = Math.min(1, p.battery + 0.6);
-        } else this.bells++;
+        if (HIDE_KINDS[t.spot.kind].locks) this.audio.playAt('click', null, 0.8);
         break;
       }
+      case 'pickup':
+        this.#pickup(t.pk);
+        break;
       case 'well':
         for (const id of this.carried) this.placed.add(id);
         this.carried.clear();
         this.audio.playAt('ritual');
-        if (this.placed.size === ITEMS.length) {
-          this.gateOpen = true;
-          this.audio.playAt('shriek', { x: this.monster.pos.x, y: 2, z: this.monster.pos.z }, 1.3);
-          this.ui.subtitle('انفتحت البوابة… اهرب!', 'The gate is open… RUN!', 5);
-          this.monster.cfg = { ...this.cfg, monsterSpeed: this.cfg.monsterSpeed * 1.15 };
-        } else this.ui.subtitle(`${this.placed.size} من ${ITEMS.length}`, '', 3);
+        if (this.placed.size >= this.needed) this.#openGate();
+        else this.ui.subtitle(`${this.placed.size} من ${this.needed}`, '', 3);
+        break;
+      case 'nest':
+        this.#returnAnklet();
         break;
       case 'gate':
         if (this.gateOpen) this.#end('escape');
         break;
+      case 'radio':
+        if (this.radio.on) this.#radioOff();
+        else this.#radioOn(true);
+        break;
+      case 'phone':
+        this.#answerPhone();
+        break;
+      case 'candle':
+        this.bag.take('matches');
+        this.world.setCandle(t.candle, true);
+        this.audio.playAt('match', null, 0.8);
+        break;
     }
   }
 
-  throwBell() {
-    if (this.state !== 'play' || this.player.hidden || this.bells <= 0) return;
-    this.bells--;
+  #pickup(pk) {
+    const tool = TOOLS[pk.kind];
+    if (tool && !this.bag.canAdd(pk.kind)) {
+      this.ui.subtitle('الحقيبة مليانة… (X بترمي الخانة المختارة)', 'Bag full… (X drops the selected slot)', 3);
+      return;
+    }
+    this.scene.remove(pk.mesh);
+    if (pk.spark) this.scene.remove(pk.spark);
+    this.pickups.splice(this.pickups.indexOf(pk), 1);
+    this.audio.playAt('pickup');
+    if (pk.item) {
+      this.carried.add(pk.item.id);
+      // السعلوة بتعرف فوراً وبتصرّخ
+      const mp = this.monster.pos;
+      this.audio.playAt('shriek', { x: mp.x, y: 2, z: mp.z });
+      this.#taunt(pk.item.id === 'anklet' ? 'anklet' : 'item');
+      this.ui.subtitle(`أخذت ${pk.item.ar}`, pk.item.en, 3);
+    } else if (pk.tape) this.#playTape(pk.tape);
+    else {
+      this.bag.add(pk.kind, pk.count ?? tool.per ?? 1);
+      if (pk.kind === 'bead') this.ui.subtitle('خرزة زرقاء… بتحميك مرة وحدة من إيدها', 'A blue bead… it will save you from her grasp once', 4);
+    }
+  }
+
+  // ---------- الأدوات ----------
+  useTool() {
+    if (this.state !== 'play') return;
+    const tool = this.bag.selected;
+    const p = this.player;
+    if (!tool) return;
+    if (p.hidden && tool !== 'battery') return;
+    switch (tool) {
+      case 'bell':
+        this.#throwBell();
+        break;
+      case 'battery':
+        if (p.battery > 0.95) return this.ui.subtitle('البطارية لسا مليانة', 'Battery still full', 2);
+        this.bag.take('battery');
+        p.battery = Math.min(1, p.battery + 0.6);
+        this.audio.playAt('click');
+        break;
+      case 'matches':
+        if (p.matchT > 0) return;
+        this.bag.take('matches');
+        p.lightMatch(25);
+        this.audio.playAt('match');
+        break;
+      case 'salt':
+        this.#placeSalt();
+        break;
+      case 'recorder':
+        this.#placeRecorder();
+        break;
+      case 'bead':
+        this.ui.subtitle('الخرزة بتشتغل لحالها لما تمسكك', 'The bead works on its own when she grabs you', 3);
+        break;
+    }
+  }
+
+  toggleFlashlight() {
+    this.player.flashlightOn = !this.player.flashlightOn;
+  }
+
+  dropTool() {
+    if (this.state !== 'play' || this.player.hidden) return;
+    const s = this.bag.drop();
+    if (!s) return;
+    const fw = this.player.forward();
+    this.#dropPickup(s.tool, this.player.pos.x + fw.x * 0.6, this.player.pos.z + fw.z * 0.6, { count: s.count });
+  }
+
+  #throwBell() {
+    this.bag.take('bell');
     this.stats.bellsThrown++;
     const p = this.player;
     const fw = p.forward();
@@ -234,15 +374,173 @@ export class Game {
     }, 450);
   }
 
-  toggleFlashlight() {
-    this.player.flashlightOn = !this.player.flashlightOn;
+  // خط ملح عند أقرب باب: ما بتقطعه لحد ما يذوب
+  #placeSalt() {
+    const p = this.player;
+    const pt = p.tile();
+    const door = doorTiles()
+      .map((t) => ({ ...t, d: Math.abs(t.x - pt.x) + Math.abs(t.y - pt.y) }))
+      .filter((t) => t.d <= 1)
+      .sort((a, b) => a.d - b.d)[0];
+    if (!door) return this.ui.subtitle('الملح بينرش عند عتبة باب', 'Salt must be poured at a doorway', 3);
+    const mt = this.monster.tile();
+    if (mt.x === door.x && mt.y === door.y) return;
+    this.bag.take('salt');
+    const key = `${door.x},${door.y}`;
+    const c = tileCenter(door.x, door.y);
+    const alongX = isWall(door.x - 1, door.y) && isWall(door.x + 1, door.y);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(alongX ? TILE * 0.8 : 0.18, 0.02, alongX ? 0.18 : TILE * 0.8),
+      new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 1, emissive: 0x222222 }),
+    );
+    mesh.position.set(c.x, 0.01, c.z);
+    this.scene.add(mesh);
+    this.salt.push({ key, until: this.time + SALT_SECONDS, mesh, warned: false });
+    this.monster.avoid.add(key);
+    this.audio.playAt('salt', { x: c.x, y: 0.3, z: c.z });
+    this.ui.subtitle('خط ملح عالعتبة… ما رح تقطعه (لفترة)', "A salt line on the threshold… she won't cross (for a while)", 3);
+  }
+
+  #saltBlocked() {
+    if (this.saltCd > this.time) return;
+    this.saltCd = this.time + 8;
+    this.stats.saltBlocked = true;
+    const mp = this.monster.pos;
+    this.audio.playAt('growl', { x: mp.x, y: 2, z: mp.z });
+    this.#taunt('salt');
+  }
+
+  // مسجّل الكاسيت: بتسجّل صوتك وبتتركه يشتغل لحاله ليشتّتها
+  async #placeRecorder() {
+    this.bag.take('recorder');
+    const p = this.player;
+    const pos = { x: p.pos.x, y: 0.4, z: p.pos.z };
+    const mesh = pickupMesh('recorder');
+    mesh.position.set(pos.x, 0.04, pos.z);
+    this.scene.add(mesh);
+    this.audio.playAt('click', pos);
+    let clip = null;
+    if (this.mic.enabled) {
+      this.ui.subtitle('🔴 عم يسجّل… احكي شي (3 ثواني)', 'Recording… say something (3 seconds)', 3);
+      clip = await this.mic.recordNext(3);
+      this.audio.playAt('click', pos);
+      this.ui.subtitle('سجّلت. بيشتغل بعد شوي… ابعد عنه', 'Recorded. It will play soon… get away from it', 3);
+    }
+    this.recorders.push({ pos, clip, next: this.time + 6, plays: 4 });
+  }
+
+  // ---------- الراديو والتلفون ----------
+  #radioOn(byPlayer) {
+    const [x, z] = this.#radioXZ();
+    this.radio.on = true;
+    this.radio.byPlayer = byPlayer;
+    this.radio.next = 0;
+    this.radio.stop = this.audio.radio({ x, y: 1, z }, 22);
+    this.radio.until = this.time + 22;
+    if (byPlayer) {
+      this.radio.uses++;
+      this.lureUses++;
+      this.stats.lures++;
+      M.noteLure(this.mem);
+    }
+  }
+
+  #radioOff() {
+    this.radio.stop?.();
+    this.radio.on = false;
+  }
+
+  // ضجيج تشتيت: بتتعلّم تتجاهل الحيل المكررة (بهالجولة ومن الجولات الماضية)
+  #lureNoise(x, z, radius) {
+    const ignore = M.lureIgnoreChance(this.mem, this.lureUses, this.cfg.adapt);
+    if (Math.random() < ignore) {
+      if (!this.lureMocked && this.lureUses > 1) {
+        this.lureMocked = true;
+        this.#taunt('lure');
+      }
+      return;
+    }
+    this.#noise({ x, z, radius, precision: 1, fromPlayer: false });
+  }
+
+  #ringPhone() {
+    this.phone.ringing = true;
+    this.phone.until = this.time + 12;
+    this.phone.next = 0;
+  }
+
+  #answerPhone() {
+    this.phone.ringing = false;
+    const c = tileCenter(PHONE.x, PHONE.y);
+    const pos = { x: c.x, y: 1, z: c.z - 0.7 };
+    this.audio.playAt('click', pos);
+    const clip = this.hour >= 2 && Math.random() < 0.6 ? this.mimic.pick('talk') : null;
+    if (clip) {
+      setTimeout(() => this.#playVoice(clip, pos, 0.5), 800);
+      this.ui.subtitle('…هاد صوتك إنت؟', '…is that your own voice?', 4);
+      setTimeout(() => this.audio.playAt('laugh', pos, 0.5), 3500);
+    } else {
+      const lines = [
+        ['حبيبي… لا تطلع من مخبأك لما تسكت الغنّية.', "Dear… don't leave your hiding place when the singing stops."],
+        ['الملح عالعتبة يا ابني… الملح.', 'Salt on the threshold, son… salt.'],
+        ['ستّك هون… لا تخاف… تعال لعندي عالقبو.', "Grandma's here… don't be afraid… come to me in the cellar."],
+      ];
+      // آخر جملة كذبة: هي اللي بتحكي
+      const [ar, en] = pick(this.hour >= 2 ? lines : lines.slice(0, 2));
+      this.audio.grandma(ar, pos);
+      this.ui.subtitle(`«${ar}»`, en, 5);
+    }
+  }
+
+  // ---------- شريط الجدة ----------
+  #playTape(tape) {
+    const fresh = noteTape(this.progress, tape.id);
+    saveProgress(this.progress);
+    this.stats.tapes.push(tape.id);
+    const p = this.player.pos;
+    tape.lines.forEach(([ar, en], i) =>
+      setTimeout(() => {
+        if (this.state !== 'play') return;
+        this.audio.grandma(ar, { x: p.x, y: 1, z: p.z });
+        this.ui.subtitle(`📼 «${ar}»`, en, 6);
+        this.#noise({ radius: 5, precision: 2 }); // الشريط بيطلع صوت
+      }, i * 6500),
+    );
+    if (fresh) setTimeout(() => this.ui.toast(`انكتب بدفتر الجدة: ${tape.title.ar}`), 13500);
+    if (Math.random() < 0.5) setTimeout(() => this.state === 'play' && this.#taunt('tape'), 15000);
+  }
+
+  // ---------- الطقس والنهايات ----------
+  #openGate() {
+    this.gateOpen = true;
+    this.audio.playAt('shriek', { x: this.monster.pos.x, y: 2, z: this.monster.pos.z }, 1.3);
+    this.ui.subtitle('انفتحت البوابة… اهرب!', 'The gate is open… RUN!', 5);
+    this.monster.cfg = { ...this.monster.cfg, monsterSpeed: this.monster.cfg.monsterSpeed * 1.15 };
+  }
+
+  // النهاية السرّية: الخلخال بيرجع لصاحبته بدل البير
+  #returnAnklet() {
+    this.carried.delete('anklet');
+    this.ankletReturned = true;
+    const c = tileCenter(NEST.x, NEST.y);
+    const m = pickupMesh('anklet');
+    m.position.set(c.x, 0.05, c.z);
+    this.scene.add(m);
+    this.audio.playAt('jingle', { x: c.x, y: 0.3, z: c.z });
+    this.#taunt('anklet_back');
+    // بتهدى: بتتراجع وبتغني فترة، وبعدين بترجع أبطأ
+    this.monster.retreat();
+    this.monster.waitFor = 45;
+    this.monster.cfg = { ...this.monster.cfg, monsterSpeed: this.monster.cfg.monsterSpeed * 0.85 };
+    this.ui.subtitle('رجّعتلها خلخالها… سكتت. البيت كلّه سكت.', 'You gave back her anklet… she went quiet. The whole house went quiet.', 5);
+    if (this.placed.size >= this.needed) this.#openGate();
   }
 
   // ---------- الضجيج ----------
   #noise({ x, z, radius, precision, kind, fromPlayer = true }) {
     const p = this.player;
     const n = { x: x ?? p.pos.x, z: z ?? p.pos.z, radius, precision, kind };
-    if (fromPlayer && p.hidden && kind !== 'scream') n.radius *= 0.5; // المخبأ بيكتم الصوت
+    if (fromPlayer && p.hidden && kind !== 'scream') n.radius *= HIDE_KINDS[p.hidden.spot.kind].muffle; // المخبأ بيكتم الصوت
     if (this.monster.hear(n, p) && fromPlayer) this.stats.heard++;
   }
 
@@ -255,6 +553,7 @@ export class Game {
     if (this.chimeMask > 0) return; // دقات الساعة بتغطي صوتك
     const n = levelToNoise(lvl);
     if (!n) return;
+    if (n.label !== 'whisper') this.stats.spoke = true;
     this.stats.loudestDb = Math.max(this.stats.loudestDb, this.mic.db);
     if (n.label === 'scream' && this.screamCd <= 0) {
       this.stats.screams++;
@@ -270,15 +569,25 @@ export class Game {
     this.mimic.add(clip);
   }
 
+  // تشغيل تسجيل من صوت اللاعب. وضع الستريمر: تنبيه قبلها
+  #playVoice(clip, pos, distortion) {
+    if (!this.settings.streamer) return this.mimic.play(clip, pos, distortion);
+    this.ui.toast('⚠ تسجيل من صوتك');
+    setTimeout(() => this.mimic.play(clip, pos, distortion), 1500);
+  }
+
   // ---------- التمسخر ----------
   #tauntCtx(extra = {}) {
     const ld = this.mem.lastDeath;
+    const ldSpot = ld?.spot && HIDE_SPOTS.find((s) => s.id === ld.spot);
     return {
       mem: this.mem,
       run: { ...this.stats, hour: this.hour },
+      night: this.cfg.night,
       favHide: M.favoriteHide(this.mem),
       hasRoute: !!M.hottestRoute(this.mem, 2.5),
-      lastDeathLabel: ld?.spot ? spotLabel(HIDE_SPOTS.find((s) => s.id === ld.spot)) : 'نفس المكان',
+      carryingAnklet: this.carried.has('anklet'),
+      lastDeathLabel: ldSpot ? spotLabel(ldSpot) : 'نفس المكان',
       ...extra,
     };
   }
@@ -302,13 +611,13 @@ export class Game {
         if (d >= 4 && d <= 9) candidates.push(t);
       }
     }
-    const t = candidates[Math.floor(Math.random() * candidates.length)];
+    const t = pick(candidates);
     if (!t || !findPath(this.monster.tile(), t)) return;
     const c = tileCenter(t.x, t.y);
     const clip = this.mimic.pick(this.hour > 3 ? 'scream' : 'talk');
     const distortion = Math.min(1, Math.max(0, (this.hour - 2) / 2.5));
     if (clip) {
-      this.mimic.play(clip, { x: c.x, y: 1.5, z: c.z }, distortion);
+      this.#playVoice(clip, { x: c.x, y: 1.5, z: c.z }, distortion);
       this.stats.mimics++;
     } else {
       // ما في تسجيلات: بتقلّد صوت الجدة
@@ -322,19 +631,124 @@ export class Game {
     // الساعة 3: أصواتك من كل مكان
     const clips = this.mimic.clips.slice(0, 3);
     const rooms = ['k', 'b', 'u', 'h'];
+    if (clips.length && this.settings.streamer) this.ui.toast('⚠ تسجيلات من صوتك');
     clips.forEach((clip, i) => {
       const tiles = roomTiles(rooms[i]);
       const t = tiles[Math.floor(tiles.length / 2)];
       const c = tileCenter(t.x, t.y);
-      setTimeout(() => this.state === 'play' && this.mimic.play(clip, { x: c.x, y: 1.5, z: c.z }, 0.8), i * 700);
+      const delay = i * 700 + (this.settings.streamer ? 1500 : 0);
+      setTimeout(() => this.state === 'play' && this.mimic.play(clip, { x: c.x, y: 1.5, z: c.z }, 0.8), delay);
       this.stats.mimics++;
     });
     if (!clips.length) this.audio.playAt('laugh', null, 0.6);
   }
 
+  // ---------- أحداث ومدير التوتر ----------
+  #randomRoomPos(y = 2) {
+    const t = pick(roomTiles(pick(Object.keys(ROOMS))));
+    return { ...tileCenter(t.x, t.y), y };
+  }
+
+  #scare() {
+    const A = this.audio;
+    const p = this.player.hidden ? this.player.hidden.pos : this.player.pos;
+    const id = pickScare({ phoneRinging: this.phone.ringing, radioOn: this.radio.on, hour: this.hour, hasClips: this.mimic.clips.length > 0 });
+    switch (id) {
+      case 'door': {
+        const doors = doorTiles().filter((t) => {
+          const c = tileCenter(t.x, t.y);
+          const d = Math.hypot(c.x - p.x, c.z - p.z);
+          return d > 4 && d < 16;
+        });
+        const t = pick(doors.length ? doors : doorTiles());
+        A.playAt('slam', { ...tileCenter(t.x, t.y), y: 1.5 });
+        break;
+      }
+      case 'toys': {
+        const tiles = roomTiles('h');
+        A.playAt('toys', { ...tileCenter(tiles[3].x, tiles[3].y), y: 0.5 });
+        break;
+      }
+      case 'ceiling':
+        // خطوات فوق السقف… ما في طابق فوق
+        for (let i = 0; i < 6; i++) {
+          setTimeout(() => A.playAt('mstep', { x: p.x - 3 + i * 1.2, y: 3.8, z: p.z + Math.sin(i) }, 0.9), i * 480);
+        }
+        break;
+      case 'radio':
+        this.#radioOn(false);
+        break;
+      case 'phone':
+        this.#ringPhone();
+        break;
+      case 'laugh':
+        A.playAt('laugh', this.#randomRoomPos(), 0.6);
+        break;
+      case 'whisper':
+        A.playAt('whisper', { x: p.x + 0.4, y: 1.6, z: p.z }, 0.5);
+        break;
+    }
+  }
+
+  #direct(dt, fear) {
+    const mon = this.monster;
+    const action = this.director.update(dt, { chasing: mon.state === 'chase', fear, hour: this.hour });
+    if (action === 'scare') this.#scare();
+    else if (action === 'relief' && mon.state === 'chase') {
+      // "تختفي مؤقتاً مع ضحكة بعيدة"
+      mon.retreat();
+      setTimeout(() => this.audio.playAt('laugh', { x: mon.pos.x, y: 2, z: mon.pos.z }, 0.5), 1500);
+    } else if (action === 'nudge') {
+      if (this.cfg.teleport && Math.random() < 0.5 && this.#teleport()) return;
+      // بتقرّب: صوت وهمي بغرفة اللاعب (مش غش: بتروح على الغرفة مش عليه)
+      const pt = this.player.hidden ? this.player.hidden.spot : this.player.tile();
+      const tiles = roomTiles(roomAt(pt.x, pt.y) || 'c');
+      const t = pick(tiles);
+      const c = tileCenter(t.x, t.y);
+      this.monster.hear({ x: c.x, z: c.z, radius: 999, precision: 4 }, this.player);
+    }
+  }
+
+  // بتختفي وبتظهر بمكان بعيد عنك، ودايماً بصوت إنذار (قواعد العدالة)
+  #teleport() {
+    const mon = this.monster;
+    if (mon.state === 'chase' || mon.state === 'search') return false;
+    const p = this.player.hidden ? this.player.hidden.pos : this.player.pos;
+    const options = Object.keys(ROOMS)
+      .flatMap((r) => roomTiles(r))
+      .filter((t) => {
+        const c = tileCenter(t.x, t.y);
+        const d = Math.hypot(c.x - p.x, c.z - p.z);
+        return d > 12 && d < 22 && !lineOfSight(c.x, c.z, p.x, p.z);
+      });
+    const t = pick(options);
+    if (!t) return false;
+    this.audio.playAt('teleport', { x: mon.pos.x, y: 2, z: mon.pos.z });
+    mon.teleport(t);
+    const c = tileCenter(t.x, t.y);
+    setTimeout(() => this.audio.playAt('teleport', { ...c, y: 2 }), 1300);
+    if (Math.random() < 0.4) setTimeout(() => this.#taunt('teleport'), 2200);
+    return true;
+  }
+
   // ---------- الموت والنهاية ----------
-  #die(cause, spot) {
+  #caught(cause, spot) {
     if (this.state !== 'play') return;
+    // الخرزة الزرقاء: فرصة نجاة وحدة
+    if (this.bag.count('bead') && !this.cfg.permadeath) {
+      this.bag.take('bead');
+      this.stats.beadSaved = true;
+      this.monster.stun(5);
+      this.audio.playAt('shriek', { x: this.monster.pos.x, y: 2, z: this.monster.pos.z }, 0.8);
+      this.#taunt('bead');
+      this.ui.subtitle('🧿 انكسرت الخرزة… اهرب! (5 ثواني)', 'The bead shattered… RUN! (5 seconds)', 4);
+      if (this.player.hidden) this.player.exitHide();
+      return;
+    }
+    this.#die(cause, spot);
+  }
+
+  #die(cause, spot) {
     this.state = 'dying';
     this.stats.deathCause = cause;
     const p = this.player;
@@ -350,7 +764,7 @@ export class Game {
     this.mem.lastDeath = { cause, spot: spot?.id ?? null, room: roomAt(t.x, t.y), time: this.time };
     // بتكرر آخر كلمة قلتها
     if (this.lastRunClip) {
-      setTimeout(() => this.mimic.play(this.lastRunClip, { x: cam.x, y: cam.y, z: cam.z }, 0.9), 1200);
+      setTimeout(() => this.#playVoice(this.lastRunClip, { x: cam.x, y: cam.y, z: cam.z }, 0.9), 1200);
     }
     setTimeout(() => this.#end('death'), 2600);
   }
@@ -359,23 +773,59 @@ export class Game {
     if (this.state === 'over') return;
     this.state = 'over';
     this.stats.time = this.time;
+    this.#radioOff();
     M.blendHabits(this.mem, this.stats);
     if (result !== 'death') this.mem.wins++;
     this.mem.bestSurvival = Math.max(this.mem.bestSurvival, this.time);
     M.saveMemory(this.mem);
+    // بلا رحمة: الموت بيمسح ذاكرتها كلها
+    let wiped = false;
+    if (result === 'death' && this.cfg.permadeath) {
+      M.clearMemory();
+      Object.assign(this.mem, M.emptyMemory());
+      wiped = true;
+    }
+    const ending = resolveEnding({ result, ankletReturned: this.ankletReturned, tapesFound: this.progress.tapes });
+    const fresh = finishRun(this.progress, {
+      ending,
+      night: this.cfg.night,
+      difficulty: this.cfg.id,
+      micOn: this.mic.enabled,
+      spoke: this.stats.spoke,
+      mimics: this.stats.mimics,
+      favHideAtStart: this.favHideAtStart,
+      usedFav: !!this.stats.usedFav,
+      beadSaved: this.stats.beadSaved,
+      saltBlocked: this.stats.saltBlocked,
+    });
+    saveProgress(this.progress);
     const deathTaunt = result === 'death' ? pickTaunt('death', this.#tauntCtx(), this.usedTaunts) : null;
     if (deathTaunt) this.audio.speak(deathTaunt.ar);
+    // الفجر: تلفونك بيرن… وصوتك بيقول "ارجع"
+    if (ending === 'dawn') {
+      const clip = this.mimic.pick('talk');
+      const cam = this.camera.position;
+      setTimeout(() => {
+        this.audio.playAt('ring', null, 0.8);
+        if (clip) setTimeout(() => this.#playVoice(clip, { x: cam.x + 0.5, y: cam.y, z: cam.z }, 0.6), 1500);
+      }, 2500);
+    }
     const spotsById = Object.fromEntries(HIDE_SPOTS.map((s) => [s.id, { label: spotLabel(s) }]));
     const favId = Object.entries(this.stats.hideUses).sort((a, b) => b[1] - a[1])[0]?.[0];
     this.audio.fear = 0;
     this.ui.end({
       result,
+      ending,
+      text: ENDINGS[ending],
       taunt: deathTaunt,
       attempt: this.mem.attempts,
       stats: this.stats,
       favHide: favId ? spotsById[favId].label : null,
       learned: M.learnedSummary(this.mem, spotsById, ROOMS),
       clock: this.clock(),
+      achievements: fresh,
+      wiped,
+      night: this.cfg.night,
     });
   }
 
@@ -388,8 +838,25 @@ export class Game {
 
   #animateOpen(spot, opening) {
     const m = this.hideMeshes[spot.id];
-    m.userData.shake = opening ? 1.1 : 0;
-    this.audio.playAt('knock', { ...tileCenter(spot.x, spot.y), y: 1 }, 0.7);
+    const kind = HIDE_KINDS[spot.kind];
+    m.userData.shake = opening ? kind.open : 0;
+    const pos = { ...tileCenter(spot.x, spot.y), y: 1 };
+    if (kind.locks && opening) {
+      // بتخبط عالباب لحد ما ينكسر القفل
+      for (let i = 0; i < 3; i++) setTimeout(() => this.audio.playAt('slam', pos, 0.7), i * 1000);
+    } else this.audio.playAt('knock', pos, 0.7);
+  }
+
+  // خزانة مسكّرة بمسامير (الليلة الثانية)
+  #nailShut(s) {
+    const g = this.hideMeshes[s.id];
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 });
+    for (const [y, r] of [[0.8, 0.15], [1.6, -0.12]]) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.14, 0.05), mat);
+      plank.position.set(0, y, 0.64);
+      plank.rotation.z = r;
+      g.add(plank);
+    }
   }
 
   // ---------- الحلقة ----------
@@ -410,15 +877,30 @@ export class Game {
 
     // الخوف: قرب السعلوة، المطاردة، العتمة
     const dist = mon.pos.distanceTo(p.hidden ? p.hidden.pos : p.pos);
-    const fear = Math.min(1, (mon.state === 'chase' ? 0.55 : 0) + Math.max(0, 1 - dist / 14) * 0.6 + (p.flashlightOn ? 0 : 0.1));
+    const fear = Math.min(1, (mon.state === 'chase' ? 0.55 : 0) + Math.max(0, 1 - dist / 14) * 0.6 + (p.light ? 0 : 0.1));
     this.audio.fear += (fear - this.audio.fear) * Math.min(1, dt * 2);
 
+    // حبس النفَس (Space) جوّا المخبأ
+    p.holdingBreath = !!(p.hidden && keys.Space && (p.holdingBreath || p.stamina > 0.1));
     const mv = p.update(dt, keys, this.audio.fear);
+    if (mv.gasp) {
+      this.audio.playAt('gasp');
+      this.#noise({ radius: 6, precision: 1 });
+    }
     if (p.hidden) p.hiddenFor = (p.hiddenFor || 0) + dt;
+    // نفَسك وإنت مخبّى: إذا قرّبت كثير بتسمعه (إلا إذا حابسه)
+    this.breathNoiseCd -= dt;
+    if (p.hidden && !p.holdingBreath && dist < 3.2 && this.breathNoiseCd <= 0) {
+      this.breathNoiseCd = 2;
+      this.#noise({ radius: 3.5, precision: 0.5 });
+    }
     this.stats.time = this.time;
     if (mv.moving) this.stats.moveTime += dt;
     if (mv.sprinting) this.stats.sprintTime += dt;
-    if (p.flashlightOn && p.battery > 0) this.stats.flashlightTime += dt;
+    if (p.light === 'flash') this.stats.flashlightTime += dt;
+
+    // ضو الشموع
+    p.inCandleLight = !p.hidden && this.world.candles.some((c) => c.lit && Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 2.8);
 
     // خطوات اللاعب
     if (mv.step) {
@@ -431,6 +913,8 @@ export class Game {
         this.audio.playAt('jingle', null);
         this.#noise({ radius: 6, precision: 1.5 });
       }
+      // كل غرض بتحمله بيطلع صوت خفيف (قسم 13)
+      if (this.carried.size >= 3) this.#noise({ radius: 2 + this.carried.size, precision: 2 });
     }
     this.pantCd -= dt;
     if (p.exhausted && this.pantCd <= 0) {
@@ -455,6 +939,9 @@ export class Game {
 
     mon.update(dt, p, { hour });
     if (this.state !== 'play') return;
+
+    this.#updateTools(dt);
+    this.#direct(dt, fear);
 
     // ساعة الحيط: كل ساعة
     this.chimeMask -= dt;
@@ -486,18 +973,27 @@ export class Game {
       }
     }
 
-    // أحداث مخيفة بدون خطر
-    this.nextScare -= dt;
-    if (this.nextScare <= 0) {
-      this.nextScare = 45 + Math.random() * 50;
-      const rooms = Object.keys(ROOMS);
-      const tiles = roomTiles(rooms[Math.floor(Math.random() * rooms.length)]);
-      const t = tiles[Math.floor(Math.random() * tiles.length)];
-      this.audio.playAt(Math.random() < 0.6 ? 'knock' : 'laugh', { ...tileCenter(t.x, t.y), y: 2 }, 0.6);
+    // الليلة الثانية: بتختفي وبتظهر أحياناً
+    if (this.cfg.teleport && mon.state === 'wander') {
+      this.nextTeleport -= dt;
+      if (this.nextTeleport <= 0) {
+        this.nextTeleport = rand(80, 140);
+        this.#teleport();
+      }
+    }
+
+    // بتطفي الشموع وهي ماشية
+    for (const c of this.world.candles) {
+      if (!c.lit || mon.state === 'chase' || Math.hypot(c.pos.x - mon.pos.x, c.pos.z - mon.pos.z) > 2.2 || (c.nextCheck ?? 0) > this.time) continue;
+      c.nextCheck = this.time + 30;
+      if (Math.random() < this.cfg.lightsOut) {
+        this.world.setCandle(c, false);
+        this.audio.playAt('whisper', c.pos, 0.4);
+      }
     }
 
     // خزاين بتهتز لما تفتّشها
-    for (const [id, m] of Object.entries(this.hideMeshes)) {
+    for (const m of Object.values(this.hideMeshes)) {
       if (m.userData.shake > 0) {
         m.userData.shake -= dt;
         m.rotation.z = Math.sin(this.time * 40) * 0.03;
@@ -510,8 +1006,7 @@ export class Game {
       if (!pk.spark) continue;
       const to = pk.spark.position.clone().sub(this.camera.position);
       const d = to.length();
-      const lit = p.flashlightOn && p.battery > 0 && d < 12 && to.normalize().dot(camFwd) > 0.93;
-      pk.spark.material.opacity = 1;
+      const lit = p.light === 'flash' && d < 12 && to.normalize().dot(camFwd) > 0.93;
       pk.spark.visible = lit && Math.sin(this.time * 3 + pk.mesh.position.x) > 0.2;
     }
     this.world.update(dt, this.time);
@@ -532,36 +1027,87 @@ export class Game {
       clock: this.clock(),
       battery: p.battery,
       stamina: p.stamina,
-      carried: this.carried.size,
+      carried: [...this.carried],
       placed: this.placed.size,
-      total: ITEMS.length,
-      bells: this.bells,
+      total: this.needed,
+      bag: this.bag,
       hint: this.#interactTarget()?.label ?? '',
-      hidden: !!p.hidden,
+      hidden: p.hidden ? p.hidden.spot.kind : null,
+      breath: p.holdingBreath,
+      showItems: this.cfg.hints === 'full' || keys.Tab,
+      showBars: this.cfg.hints !== 'none' || keys.Tab,
     });
     this.post.render(dt, { fear: this.audio.fear, hidden: p.hidden ? 1 : 0 });
+  }
+
+  // الملح بيذوب، الراديو بيجذبها، المسجّل بيشتغل، والتلفون بيرن
+  #updateTools(dt) {
+    const mon = this.monster;
+    for (const s of [...this.salt]) {
+      if (!s.warned && this.time > s.until - 8) {
+        s.warned = true;
+        s.mesh.material.opacity = 0.5;
+        s.mesh.material.transparent = true;
+      }
+      if (this.time >= s.until) {
+        this.scene.remove(s.mesh);
+        this.salt.splice(this.salt.indexOf(s), 1);
+        mon.avoid.delete(s.key);
+      }
+    }
+    if (this.radio.on) {
+      const [x, z] = this.#radioXZ();
+      this.radio.next -= dt;
+      if (this.radio.next <= 0) {
+        this.radio.next = 2;
+        if (this.radio.byPlayer) this.#lureNoise(x, z, 22);
+        else this.#noise({ x, z, radius: 22, precision: 1, fromPlayer: false });
+      }
+      // وصلت عنده: بتكسّره
+      if (Math.hypot(mon.pos.x - x, mon.pos.z - z) < 2.4) {
+        this.#radioOff();
+        this.audio.playAt('slam', { x, y: 1, z });
+        setTimeout(() => this.audio.playAt('laugh', { x, y: 2, z }, 0.6), 600);
+      } else if (this.time >= this.radio.until) this.radio.on = false;
+    }
+    for (const r of [...this.recorders]) {
+      if (this.time < r.next) continue;
+      r.next = this.time + 6;
+      r.plays--;
+      if (r.clip) this.#playVoice(r.clip, r.pos, 0);
+      else this.audio.playAt('knock', r.pos, 0.8);
+      if (r.plays === 3) {
+        this.lureUses++;
+        this.stats.lures++;
+        M.noteLure(this.mem);
+      }
+      this.#lureNoise(r.pos.x, r.pos.z, 16);
+      if (r.plays <= 0) this.recorders.splice(this.recorders.indexOf(r), 1);
+    }
+    if (this.phone.ringing) {
+      this.phone.next -= dt;
+      if (this.phone.next <= 0) {
+        this.phone.next = 3;
+        const c = tileCenter(PHONE.x, PHONE.y);
+        this.audio.playAt('ring', { x: c.x, y: 1, z: c.z - 0.7 });
+      }
+      if (this.time > this.phone.until) this.phone.ringing = false;
+    }
   }
 
   // أصوات البيت: رعد وبرق، صرير، نقط مي، عواء، ونفَس السعلوة
   #ambient(dt, p, mon) {
     const A = this.audio;
-    const rand = (a, b) => a + Math.random() * (b - a);
-    const randomRoomPos = () => {
-      const rooms = Object.keys(ROOMS);
-      const tiles = roomTiles(rooms[Math.floor(Math.random() * rooms.length)]);
-      const t = tiles[Math.floor(Math.random() * tiles.length)];
-      return { ...tileCenter(t.x, t.y), y: 2.5 };
-    };
     this.nextLightning -= dt;
     if (this.nextLightning <= 0) {
       this.nextLightning = rand(35, 80);
-      this.world.lightning();
+      if (!this.settings.reduceFlashes) this.world.lightning();
       horror.thunder(A, rand(0.4, 1.6), rand(0.7, 1));
     }
     this.nextCreak -= dt;
     if (this.nextCreak <= 0) {
       this.nextCreak = rand(6, 16);
-      horror.creak(A, randomRoomPos(), rand(0.5, 1));
+      horror.creak(A, this.#randomRoomPos(2.5), rand(0.5, 1));
     }
     this.nextDrip -= dt;
     if (this.nextDrip <= 0) {

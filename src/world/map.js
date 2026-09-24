@@ -43,17 +43,37 @@ export const HIDE_SPOTS = [
   { id: 'bed_h', kind: 'bed', x: 5, y: 12, room: 'h' },
   { id: 'wardrobe_k', kind: 'wardrobe', x: 1, y: 1, room: 'k' },
   { id: 'wardrobe_a', kind: 'wardrobe', x: 15, y: 4, room: 'a' },
+  { id: 'chest_b', kind: 'chest', x: 21, y: 1, room: 'b' },
+  { id: 'curtain_l', kind: 'curtain', x: 6, y: 10, room: 'l' },
+  { id: 'curtain_a', kind: 'curtain', x: 12, y: 4, room: 'a' },
+  { id: 'stall_d', kind: 'stall', x: 23, y: 10, room: 'd' },
 ];
+
+// خصائص كل نوع مخبأ (قسم 15): muffle = كم بيوصل من صوتك، eye = ارتفاع النظر، open = مدة فتحه، breathSave = فرصة النجاة بحبس النفَس
+export const HIDE_KINDS = {
+  wardrobe: { breathSave: 0.25, ar: 'الخزانة', en: 'Wardrobe', muffle: 0.5, eye: 1.4, open: 1.1 },
+  bed: { breathSave: 0.6, ar: 'تحت السرير', en: 'Under the bed', muffle: 0.6, eye: 0.35, open: 1.1 },
+  chest: { breathSave: 0.5, ar: 'السحّارة', en: 'The chest', muffle: 0.25, eye: 0.5, open: 1.6, blind: true, lowPriority: true },
+  curtain: { breathSave: 0.15, ar: 'ورا الستارة', en: 'Behind the curtain', muffle: 0.85, eye: 1.5, open: 0.6, lightExposed: true },
+  stall: { breathSave: 0, ar: 'بيت الخلاء (بيتسكّر)', en: 'Latrine (locks)', muffle: 0.4, eye: 1.4, open: 3.5, locks: true },
+};
 export const WELL = { x: 13, y: 8 };
 export const GATE = { x: 11, y: 17 };
 export const PLAYER_START = { x: 11, y: 15 };
 export const MONSTER_LAIR = { x: 21, y: 15 };
+export const RADIO = { x: 8, y: 4 }; // راديو قديم بالمضافة
+export const PHONE = { x: 14, y: 12 }; // التلفون الأرضي بالمدخل
+export const NEST = { x: 19, y: 12 }; // عشّ السعلوة بالقبو (هون بترجّعلها خلخالها)
+// أماكن بداية السعلوة (بتتغيّر كل جولة)
+export const MONSTER_STARTS = [MONSTER_LAIR, { x: 22, y: 8 }, { x: 3, y: 2 }, { x: 20, y: 2 }];
 
 // الأغراض المطلوبة: الخلخال دائماً بالقبو
 export const ITEMS = [
   { id: 'rosary', ar: 'مسبحة الجدة', en: "Grandma's rosary", rooms: ['b', 'l', 'a'] },
   { id: 'anklet', ar: 'الخلخال الفضي', en: 'Silver anklet', rooms: ['u'], jingles: true },
-  { id: 'photo', ar: 'صورة العائلة القديمة', en: 'Old family photo', rooms: ['h', 'a', 'k'] },
+  { id: 'photo', ar: 'صورة العائلة القديمة', en: 'Old family photo', rooms: ['h', 'a'] },
+  { id: 'key', ar: 'مفتاح السحّارة النحاسي', en: 'Brass chest key', rooms: ['k', 'd', 'h'] },
+  { id: 'water', ar: 'قارورة ماء البير القديمة', en: 'Old well-water flask', rooms: ['k', 'd'] },
 ];
 
 export const W = LAYOUT[0].length;
@@ -115,7 +135,8 @@ export function lineOfSight(ax, az, bx, bz) {
 }
 
 // A* على الشبكة (4 اتجاهات). goal يجوز يكون خانة غير قابلة للمشي (مخبأ)، فنوقف جنبها.
-export function findPath(start, goal) {
+// avoid: خانات ممنوعة زيادة (خط الملح) بصيغة "x,y"
+export function findPath(start, goal, avoid = null) {
   const key = (x, y) => y * W + x;
   const goalKey = key(goal.x, goal.y);
   const goalOk = isWalkable(goal.x, goal.y);
@@ -141,7 +162,7 @@ export function findPath(start, goal) {
     for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cur.x + ox;
       const ny = cur.y + oy;
-      if (!isWalkable(nx, ny)) continue;
+      if (!isWalkable(nx, ny) || avoid?.has(`${nx},${ny}`)) continue;
       const nk = key(nx, ny);
       const g = cur.g + 1;
       if (g < (gScore.get(nk) ?? Infinity)) {
