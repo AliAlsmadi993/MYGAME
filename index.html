@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>السعلوة</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="grain"></div>
+    <div id="vignette"></div>
+    <div id="hideMask" class="hidden"></div>
+
+    <section id="menu" class="screen">
+      <h1>السعلوة</h1>
+      <p class="tag">بتسمعك… بتتذكّرك… وبتقلّد صوتك.</p>
+      <p class="tag en">She hears you. She remembers you. She speaks with your voice.</p>
+
+      <div class="box">
+        <h3>الصعوبة</h3>
+        <div id="diffs" class="row"></div>
+      </div>
+
+      <div class="box">
+        <label><input type="checkbox" id="optMic" checked /> استخدم المايك (السعلوة بتسمع صوتك الحقيقي) — مستحسن</label>
+        <label><input type="checkbox" id="optRec" checked /> اسمح لها تقلّد صوتي</label>
+        <p class="small">
+          🔒 التسجيلات مقاطع قصيرة بتضل <b>على جهازك فقط</b>، وما بتنرفع لأي مكان، وبتنحذف تلقائياً بعد أسبوع.
+        </p>
+        <div class="row">
+          <button id="btnDelClips" class="ghost">احذف كل تسجيلات صوتي</button>
+          <button id="btnForget" class="ghost">خلّيها تنساني (مسح الذاكرة)</button>
+        </div>
+        <p id="memInfo" class="small"></p>
+      </div>
+
+      <button id="btnStart" class="big">ابدأ الليلة</button>
+
+      <div class="box small controls">
+        <b>التحكم:</b> WASD مشي · Shift ركض · C انحناء · F الكشاف · E تفاعل/اختباء · G أو زر الماوس الأيمن رمي جرس · Esc إيقاف
+        <br />🎧 العب بالسماعات، وبالعتمة. عمر 16+.
+      </div>
+    </section>
+
+    <section id="calib" class="screen hidden">
+      <h2>معايرة المايك</h2>
+      <p id="calibText">…</p>
+      <div class="meter big"><div id="calibMeter"></div></div>
+    </section>
+
+    <section id="pause" class="screen hidden">
+      <h2>موقّفة</h2>
+      <p>اكبس بأي مكان لتكمّل</p>
+      <p class="small">هي كمان مستنية…</p>
+    </section>
+
+    <section id="end" class="screen hidden">
+      <h2 id="endTitle"></h2>
+      <p id="endTaunt" class="taunt"></p>
+      <div class="box">
+        <h3>إحصائيات الليلة</h3>
+        <ul id="endStats"></ul>
+      </div>
+      <div class="box">
+        <h3>شو تعلّمت السعلوة عنك</h3>
+        <ul id="endLearned"></ul>
+      </div>
+      <div class="row">
+        <button id="btnAgain" class="big">ليلة ثانية</button>
+        <button id="btnMenu" class="ghost">القائمة</button>
+      </div>
+    </section>
+
+    <div id="hud" class="hidden">
+      <div id="clock">12:00</div>
+      <div class="bars">
+        <div class="bar"><span>🔦</span><div class="meter"><div id="battery"></div></div></div>
+        <div class="bar"><span>💨</span><div class="meter"><div id="stamina"></div></div></div>
+        <div class="bar" id="micBar"><span>🎤</span><div class="meter"><div id="mic"></div></div></div>
+      </div>
+      <div id="items"></div>
+      <div id="hint"></div>
+      <div id="dot"></div>
+      <div id="dbg"></div>
+    </div>
+    <div id="subs"></div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,168 @@
+// اللاعب: الحركة، التحمّل، الانحناء، الكشاف، والاختباء.
+import * as THREE from 'three';
+import { TILE, isWalkable, worldToTile, tileCenter, isWall } from './world/map.js';
+
+const RADIUS = 0.35;
+const EYE = 1.6;
+const CROUCH_EYE = 0.95;
+
+export class Player {
+  constructor(camera, scene, cfg) {
+    this.cfg = cfg;
+    this.camera = camera;
+    this.yaw = 0; // بيطلّع على جوّا البيت
+    this.pitch = 0;
+    this.pos = new THREE.Vector3();
+    this.stamina = 1;
+    this.exhausted = false;
+    this.crouch = false;
+    this.battery = 1;
+    this.flashlightOn = true;
+    this.hidden = null; // المخبأ الحالي
+    this.bobT = 0;
+    this.stepAcc = 0;
+
+    // الكشاف: ضوء مخروطي مربوط بالكاميرا
+    const spot = new THREE.SpotLight(0xfff1d0, 30, 22, Math.PI / 7, 0.45, 1.5);
+    spot.position.set(0.15, -0.15, 0);
+    spot.target.position.set(0, -0.1, -1);
+    camera.add(spot, spot.target);
+    const glow = new THREE.PointLight(0xfff1d0, 0.8, 3, 2); // ضوء خفيف حوالين اللاعب
+    camera.add(glow);
+    this.spot = spot;
+    this.glow = glow;
+    scene.add(camera);
+  }
+
+  place(tx, ty) {
+    const p = tileCenter(tx, ty);
+    this.pos.set(p.x, 0, p.z);
+  }
+
+  look(dx, dy) {
+    if (this.hidden) {
+      // جوّا المخبأ: نظر محدود من الفتحة
+      this.yaw = THREE.MathUtils.clamp(this.yaw - dx * 0.002, this.hidden.yaw - 0.5, this.hidden.yaw + 0.5);
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.002, -0.3, 0.3);
+      return;
+    }
+    this.yaw -= dx * 0.0022;
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0022, -1.4, 1.4);
+  }
+
+  forward() {
+    return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+  }
+
+  tile() {
+    return worldToTile(this.pos.x, this.pos.z);
+  }
+
+  // بترجع معلومات الحركة لهالإطار
+  update(dt, keys, fear) {
+    const out = { moving: false, sprinting: false, step: false, pant: false };
+    let lightTarget = this.flashlightOn && this.battery > 0 ? 30 : 0;
+    // الكشاف بيرمش لما البطارية ضعيفة
+    if (this.battery < 0.15 && Math.random() < 0.08) lightTarget *= 0.2;
+    if (this.flashlightOn && this.battery > 0) this.battery = Math.max(0, this.battery - dt / this.cfg.batterySeconds);
+    this.spot.intensity = lightTarget * (0.4 + 0.6 * Math.min(1, this.battery * 4));
+
+    if (this.hidden) {
+      this.stamina = Math.min(1, this.stamina + dt * 0.15);
+      this.#applyCamera(dt, 0, fear);
+      return out;
+    }
+
+    const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+    const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    const moving = f !== 0 || s !== 0;
+    const wantSprint = keys.ShiftLeft || keys.ShiftRight;
+    const sprint = moving && wantSprint && !this.crouch && !this.exhausted;
+    let speed = this.crouch ? 1.3 : sprint ? 5 : 2.6;
+    if (this.exhausted) speed *= 0.8;
+
+    if (sprint) {
+      this.stamina -= dt / 6;
+      if (this.stamina <= 0) {
+        this.stamina = 0;
+        this.exhausted = true;
+        out.pant = true;
+      }
+    } else {
+      this.stamina = Math.min(1, this.stamina + dt * (moving ? 0.12 : 0.22));
+      if (this.exhausted && this.stamina > 0.4) this.exhausted = false;
+    }
+
+    if (moving) {
+      const fw = this.forward();
+      const right = new THREE.Vector3(-fw.z, 0, fw.x);
+      const dir = fw.multiplyScalar(f).add(right.multiplyScalar(s)).normalize().multiplyScalar(speed * dt);
+      this.#move(dir.x, 0);
+      this.#move(0, dir.z);
+      this.stepAcc += speed * dt;
+      const stride = sprint ? 2.2 : 1.6;
+      if (this.stepAcc > stride) {
+        this.stepAcc = 0;
+        out.step = true;
+      }
+    }
+    out.moving = moving;
+    out.sprinting = sprint;
+    out.speed = moving ? speed : 0;
+    this.#applyCamera(dt, moving ? speed : 0, fear);
+    return out;
+  }
+
+  #solidAt(wx, wz) {
+    const { x, y } = worldToTile(wx, wz);
+    return !isWalkable(x, y);
+  }
+
+  #move(dx, dz) {
+    const nx = this.pos.x + dx;
+    const nz = this.pos.z + dz;
+    const r = RADIUS;
+    const hit =
+      this.#solidAt(nx - r, nz - r) || this.#solidAt(nx + r, nz - r) || this.#solidAt(nx - r, nz + r) || this.#solidAt(nx + r, nz + r);
+    if (!hit) {
+      this.pos.x = nx;
+      this.pos.z = nz;
+    }
+  }
+
+  #applyCamera(dt, speed, fear) {
+    const eye = this.hidden ? this.hidden.eye : this.crouch ? CROUCH_EYE : EYE;
+    this.bobT += dt * speed * 2.2;
+    const bob = Math.sin(this.bobT) * 0.04 * Math.min(1, speed / 2.6);
+    // ارتجاف مع الخوف
+    const shake = fear > 0.5 ? (Math.random() - 0.5) * 0.012 * fear : 0;
+    const base = this.hidden ? this.hidden.pos : this.pos;
+    this.camera.position.set(base.x, THREE.MathUtils.lerp(this.camera.position.y || eye, eye + bob, 0.2), base.z);
+    this.camera.rotation.set(0, 0, 0);
+    this.camera.rotateY(this.yaw + shake);
+    this.camera.rotateX(this.pitch + shake);
+  }
+
+  // الدخول للمخبأ: الكاميرا بتنحط جوّاه وبتطلّع على الغرفة
+  enterHide(spot) {
+    const c = tileCenter(spot.x, spot.y);
+    const open = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dx, dy]) => !isWall(spot.x + dx, spot.y + dy) && isWalkable(spot.x + dx, spot.y + dy)) || [0, 1];
+    const yaw = Math.atan2(-open[0], -open[1]);
+    this.exitTile = { x: spot.x + open[0], y: spot.y + open[1] };
+    this.hidden = {
+      spot,
+      yaw,
+      eye: spot.kind === 'bed' ? 0.35 : 1.4,
+      pos: new THREE.Vector3(c.x + open[0] * TILE * 0.3, 0, c.z + open[1] * TILE * 0.3),
+    };
+    this.yaw = yaw;
+    this.pitch = 0;
+    this.crouch = false;
+  }
+
+  exitHide() {
+    if (!this.hidden) return;
+    this.hidden = null;
+    this.place(this.exitTile.x, this.exitTile.y);
+  }
+}
