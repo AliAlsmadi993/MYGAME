@@ -5,10 +5,39 @@ import { TILE, isWalkable, worldToTile, tileCenter, isWall } from './world/map.j
 const RADIUS = 0.35;
 const EYE = 1.6;
 const CROUCH_EYE = 0.95;
+const FLASH = 130;
+
+// نقشة ضوء الكشاف: بقعة بحلقات وعيوب عدسة
+function flashlightCookie() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grd.addColorStop(0, '#fff');
+  grd.addColorStop(0.18, '#f4f0e6');
+  grd.addColorStop(0.3, '#c9c4b8');
+  grd.addColorStop(0.36, '#e8e2d4');
+  grd.addColorStop(0.55, '#8a857a');
+  grd.addColorStop(0.7, '#5a564e');
+  grd.addColorStop(0.72, '#78736a');
+  grd.addColorStop(1, '#000');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
+    g.beginPath();
+    g.arc(128 + (Math.random() - 0.5) * 160, 128 + (Math.random() - 0.5) * 160, 4 + Math.random() * 14, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 export class Player {
-  constructor(camera, scene, cfg) {
+  constructor(camera, scene, cfg, colliders = []) {
     this.cfg = cfg;
+    this.colliders = colliders;
     this.camera = camera;
     this.yaw = 0; // بيطلّع على جوّا البيت
     this.pitch = 0;
@@ -22,12 +51,18 @@ export class Player {
     this.bobT = 0;
     this.stepAcc = 0;
 
-    // الكشاف: ضوء مخروطي مربوط بالكاميرا
-    const spot = new THREE.SpotLight(0xfff1d0, 30, 22, Math.PI / 7, 0.45, 1.5);
-    spot.position.set(0.15, -0.15, 0);
-    spot.target.position.set(0, -0.1, -1);
+    // الكشاف: ضوء مخروطي بظلال ونقشة عدسة حقيقية، مربوط بالكاميرا
+    const spot = new THREE.SpotLight(0xfff1d6, FLASH, 26, Math.PI / 6.5, 0.55, 2);
+    spot.map = flashlightCookie();
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(1024, 1024);
+    spot.shadow.bias = -0.0008;
+    spot.shadow.normalBias = 0.03;
+    spot.shadow.camera.near = 0.2;
+    spot.position.set(0.18, -0.2, 0.05);
+    spot.target.position.set(0, -0.15, -1);
     camera.add(spot, spot.target);
-    const glow = new THREE.PointLight(0xfff1d0, 0.8, 3, 2); // ضوء خفيف حوالين اللاعب
+    const glow = new THREE.PointLight(0xfff1d0, 0.25, 3.5, 2); // ارتداد خفيف حوالين اللاعب
     camera.add(glow);
     this.spot = spot;
     this.glow = glow;
@@ -61,11 +96,12 @@ export class Player {
   // بترجع معلومات الحركة لهالإطار
   update(dt, keys, fear) {
     const out = { moving: false, sprinting: false, step: false, pant: false };
-    let lightTarget = this.flashlightOn && this.battery > 0 ? 30 : 0;
+    let lightTarget = this.flashlightOn && this.battery > 0 ? FLASH : 0;
     // الكشاف بيرمش لما البطارية ضعيفة
     if (this.battery < 0.15 && Math.random() < 0.08) lightTarget *= 0.2;
     if (this.flashlightOn && this.battery > 0) this.battery = Math.max(0, this.battery - dt / this.cfg.batterySeconds);
     this.spot.intensity = lightTarget * (0.4 + 0.6 * Math.min(1, this.battery * 4));
+    this.glow.intensity = lightTarget ? 0.25 : 0;
 
     if (this.hidden) {
       this.stamina = Math.min(1, this.stamina + dt * 0.15);
@@ -124,7 +160,8 @@ export class Player {
     const r = RADIUS;
     const hit =
       this.#solidAt(nx - r, nz - r) || this.#solidAt(nx + r, nz - r) || this.#solidAt(nx - r, nz + r) || this.#solidAt(nx + r, nz + r);
-    if (!hit) {
+    const blocked = hit || this.colliders.some((c) => nx + r > c.minX && nx - r < c.maxX && nz + r > c.minZ && nz - r < c.maxZ);
+    if (!blocked) {
       this.pos.x = nx;
       this.pos.z = nz;
     }

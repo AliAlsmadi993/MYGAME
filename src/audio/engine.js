@@ -1,4 +1,6 @@
 // محرّك الصوت: كل الأصوات مولّدة برمجياً (بدون ملفات) ومكانية ثلاثية الأبعاد.
+import { horror, drone } from './horror.js';
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -21,6 +23,7 @@ export class AudioEngine {
     this.reverb.connect(this.master);
     this.#ambience();
     this.#heart();
+    this.drone = drone(this);
     return ctx.resume();
   }
 
@@ -109,6 +112,7 @@ export class AudioEngine {
 
   setListener(pos, forward) {
     if (!this.ctx) return;
+    this.lastListener = pos;
     const l = this.ctx.listener;
     const t = this.now;
     if (l.positionX) {
@@ -151,6 +155,12 @@ export class AudioEngine {
   // أصوات لحظية بمكان معيّن
   playAt(kind, pos, vol = 1) {
     if (!this.ctx) return;
+    const h = { shriek: 'scream', laugh: 'laugh', whisper: 'whisper', growl: 'growl', creak: 'creak', drip: 'drip' }[kind];
+    if (h) return horror[h](this, pos, vol);
+    if (kind === 'grab') {
+      horror.scream(this, null, 1.2);
+      horror.sting(this, 1.3);
+    }
     const ctx = this.ctx;
     const out = pos ? this.panner(pos) : this.master;
     const g = ctx.createGain();
@@ -234,7 +244,7 @@ export class AudioEngine {
         noise(0.65, 'bandpass', 900);
         break;
       case 'grab': // لحظة الإمساك
-        env(0.01, 2.2, 1);
+        env(0.01, 2.2, 0.6);
         osc('sawtooth', 120, 60, 2.2);
         noise(2.2, 'lowpass', 1500);
         osc('square', 700, 200, 1.2);
@@ -278,24 +288,7 @@ export class AudioEngine {
     };
     const sing = () => {
       if (!alive) return;
-      const t = this.now;
-      const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.value = 220 * Math.pow(2, notes[i % notes.length] / 12);
-      const vib = ctx.createOscillator();
-      const vg = ctx.createGain();
-      vib.frequency.value = 5.5;
-      vg.gain.value = 4;
-      vib.connect(vg).connect(o.frequency);
-      const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.0001, t);
-      ng.gain.exponentialRampToValueAtTime(0.3, t + 0.15);
-      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
-      o.connect(ng).connect(g);
-      o.start(t);
-      vib.start(t);
-      o.stop(t + 0.9);
-      vib.stop(t + 0.9);
+      horror.hum(this, g, 220 * Math.pow(2, notes[i % notes.length] / 12), 0.9);
       i++;
       setTimeout(sing, i % notes.length === 0 ? 3500 : 700);
     };
@@ -305,7 +298,7 @@ export class AudioEngine {
 
   // صوت السعلوة وهي تحكي: قراءة آلية بصوت ثقيل كمرحلة أولى + همس مكاني
   speak(text, pos, lang = 'ar') {
-    if (pos) this.playAt('whisper', pos, 0.8);
+    if (pos) horror.whisper(this, pos, 0.9, 2.5);
     const synth = window.speechSynthesis;
     if (!synth) return;
     const u = new SpeechSynthesisUtterance(text);

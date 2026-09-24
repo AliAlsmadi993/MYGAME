@@ -12,16 +12,20 @@ const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
 
 const canvas = $('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setPixelRatio(1);
+const LOW = params.has('low');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(LOW ? 0.6 : Math.min(devicePixelRatio, 1.25));
+renderer.shadowMap.enabled = !LOW;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
 
 function resize() {
-  // دقة منخفضة مقصودة (أسلوب PS1)
-  const scale = Math.max(1.5, innerHeight / 320);
-  renderer.setSize(Math.round(innerWidth / scale), Math.round(innerHeight / scale), false);
+  renderer.setSize(innerWidth, innerHeight, false);
   if (game) {
     game.camera.aspect = innerWidth / innerHeight;
     game.camera.updateProjectionMatrix();
+    game.post.setSize(innerWidth, innerHeight);
   }
 }
 

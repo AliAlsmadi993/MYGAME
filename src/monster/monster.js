@@ -4,50 +4,14 @@ import {
   TILE, HIDE_SPOTS, MONSTER_LAIR, ROOMS, findPath, lineOfSight, tileCenter, worldToTile, roomAt, roomTiles, isWalkable,
 } from '../world/map.js';
 import { hideSearchOrder, hottestRoute } from './memory.js';
-
-const HEIGHT = 2.7;
-
-function buildMesh() {
-  const g = new THREE.Group();
-  const cloth = new THREE.MeshLambertMaterial({ color: 0x1a1612 });
-  const skin = new THREE.MeshLambertMaterial({ color: 0x5b5448 });
-  const hair = new THREE.MeshLambertMaterial({ color: 0x050404 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.5, 2.1, 6), cloth);
-  body.position.y = 1.05;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 5), skin);
-  head.position.y = 2.35;
-  const mane = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 1.3, 8, 1, true, Math.PI + 0.6, Math.PI * 2 - 1.2), hair);
-  mane.material.side = THREE.DoubleSide;
-  mane.position.y = 1.85;
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffd24a });
-  const eyes = new THREE.Group();
-  for (const x of [-0.07, 0.07]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 3), eyeMat);
-    e.position.set(x, 0, -0.2);
-    eyes.add(e);
-  }
-  eyes.position.y = 2.37;
-  const arms = [];
-  for (const x of [-0.32, 0.32]) {
-    const a = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.5, 0.07), skin);
-    a.geometry.translate(0, -0.75, 0);
-    a.position.set(x, 2.05, 0);
-    arms.push(a);
-    g.add(a);
-  }
-  const headGroup = new THREE.Group();
-  headGroup.add(head, eyes);
-  g.add(body, mane, headGroup);
-  g.userData = { headGroup, arms };
-  return g;
-}
+import { buildBody, animateBody } from './body.js';
 
 export class Monster {
   constructor(scene, audio, cfg, mem) {
     this.audio = audio;
     this.cfg = cfg;
     this.mem = mem;
-    this.mesh = buildMesh();
+    this.mesh = buildBody();
     scene.add(this.mesh);
     this.pos = new THREE.Vector3();
     this.facing = new THREE.Vector3(0, 0, 1);
@@ -320,14 +284,8 @@ export class Monster {
     const m = this.mesh;
     m.position.set(this.pos.x, 0, this.pos.z);
     m.rotation.y = Math.atan2(this.facing.x, this.facing.z) + Math.PI;
-    const { headGroup, arms } = m.userData;
-    const twitch = Math.sin(this.t * 13) > 0.97 ? 0.5 : 0;
-    headGroup.rotation.z = Math.sin(this.t * 0.8) * 0.35 + twitch;
-    const moving = (this.path?.length || this.direct) && !(this.pause > 0);
-    const swing = moving ? Math.sin(this.t * (this.state === 'chase' ? 9 : 4)) * 0.3 : 0;
-    arms[0].rotation.x = swing - (this.state === 'chase' ? 0.9 : 0);
-    arms[1].rotation.x = -swing - (this.state === 'chase' ? 0.9 : 0);
-    m.position.y = moving ? Math.abs(Math.sin(this.t * 4)) * 0.05 : 0;
+    const moving = !!(this.path?.length || this.direct) && !(this.pause > 0);
+    animateBody(m, this.t, { moving, chase: this.state === 'chase', searching: this.state === 'search' || (this.state === 'ambush' && this.waiting) });
     if (this.panner) {
       this.audio.movePanner(this.panner, { x: this.pos.x, y: 2.2, z: this.pos.z });
       // بتغني وهي تتجوّل، وبتسكت لما تصيد

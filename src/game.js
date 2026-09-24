@@ -10,6 +10,8 @@ import * as M from './monster/memory.js';
 import { pickTaunt } from './monster/taunts.js';
 import { levelToNoise } from './audio/mic.js';
 import { DAWN_HOUR } from './config.js';
+import { createPost } from './post.js';
+import { horror } from './audio/horror.js';
 
 const HIDE_LABELS = { wardrobe: 'الخزانة', bed: 'تحت السرير' };
 export const spotLabel = (s) => `${HIDE_LABELS[s.kind]} (${ROOMS[s.room].ar})`;
@@ -19,14 +21,23 @@ export class Game {
     Object.assign(this, { renderer, audio, mic, mimic, cfg, mem, ui });
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 80);
-    const world = buildWorld(this.scene);
+    const world = (this.world = buildWorld(this.scene));
     this.hideMeshes = world.hideMeshes;
-    this.player = new Player(this.camera, this.scene, cfg);
+    this.post = createPost(renderer, this.scene, this.camera);
+    this.player = new Player(this.camera, this.scene, cfg, world.colliders);
     this.player.place(PLAYER_START.x, PLAYER_START.y);
     this.monster = new Monster(this.scene, audio, cfg, mem);
     this.monster.onCatch = (cause, spot) => this.#die(cause, spot);
     this.monster.onOpen = (spot, opening) => this.#animateOpen(spot, opening);
-    this.monster.onState = (s) => this.ui.debug?.(s);
+    this.monster.onState = (s, prev) => {
+      this.ui.debug?.(s);
+      // أول ما تشوفك: نغمة فزع وخرخرة
+      if (s === 'chase' && prev !== 'chase') {
+        horror.sting(audio, 1);
+        const mp = this.monster.pos;
+        setTimeout(() => horror.growl(audio, { x: mp.x, y: 2, z: mp.z }, 1), 300);
+      }
+    };
 
     this.time = 0;
     this.state = 'play';
@@ -50,6 +61,12 @@ export class Game {
     this.nextMimic = null;
     this.nextScare = 50;
     this.climaxDone = false;
+    this.nextLightning = 25 + Math.random() * 30;
+    this.nextCreak = 8;
+    this.nextDrip = 3;
+    this.nextHowl = 60;
+    this.breathCd = 0;
+    this.inhale = true;
 
     this.pickups = [];
     this.#spawnPickups();
@@ -71,19 +88,48 @@ export class Game {
   #spawnPickups() {
     const taken = new Set();
     const place = (kind, rooms, extra = {}) => {
-      const tiles = rooms.flatMap((r) => roomTiles(r)).filter((t) => !taken.has(`${t.x},${t.y}`));
+      const blocked = this.world.blockedTiles;
+      const tiles = rooms.flatMap((r) => roomTiles(r)).filter((t) => !taken.has(`${t.x},${t.y}`) && !blocked.has(`${t.x},${t.y}`));
       const t = tiles[Math.floor(Math.random() * tiles.length)];
       taken.add(`${t.x},${t.y}`);
       const c = tileCenter(t.x, t.y);
       const mesh = pickupMesh(kind);
-      mesh.position.set(c.x + (Math.random() - 0.5), 0.08, c.z + (Math.random() - 0.5));
+      mesh.position.x = c.x + (Math.random() - 0.5);
+      mesh.position.z = c.z + (Math.random() - 0.5);
+      mesh.traverse((o) => (o.castShadow = true));
       this.scene.add(mesh);
+      // لمعة صغيرة بتبيّن لما الكشاف يوقع عليها
+      if (extra.item) {
+        const sp = new THREE.Sprite(this.#sparkMat());
+        sp.scale.set(0.12, 0.12, 1);
+        sp.position.set(mesh.position.x, 0.12, mesh.position.z);
+        this.scene.add(sp);
+        extra.spark = sp;
+      }
       this.pickups.push({ kind, mesh, ...extra });
     };
     for (const it of ITEMS) place(it.id, it.rooms, { item: it });
     const all = Object.keys(ROOMS);
     for (let i = 0; i < this.cfg.batteries; i++) place('battery', all);
     for (let i = 0; i < 2; i++) place('bell', all);
+  }
+
+  #sparkMat() {
+    if (!this.sparkMaterial) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grd.addColorStop(0, 'rgba(255,255,240,1)');
+      grd.addColorStop(0.2, 'rgba(255,245,220,0.5)');
+      grd.addColorStop(1, 'rgba(255,240,200,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, 64, 64);
+      g.fillRect(30, 0, 4, 64);
+      g.fillRect(0, 30, 64, 4);
+      this.sparkMaterial = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    }
+    return this.sparkMaterial;
   }
 
   // ---------- التفاعل ----------
@@ -134,6 +180,7 @@ export class Game {
       case 'pickup': {
         const pk = t.pk;
         this.scene.remove(pk.mesh);
+        if (pk.spark) this.scene.remove(pk.spark);
         this.pickups.splice(this.pickups.indexOf(pk), 1);
         this.audio.playAt('pickup');
         if (pk.item) {
@@ -350,7 +397,8 @@ export class Game {
     if (this.state === 'dying') {
       this.camera.position.x += (Math.random() - 0.5) * 0.04;
       this.camera.position.y += (Math.random() - 0.5) * 0.04;
-      this.renderer.render(this.scene, this.camera);
+      this.world.update(dt, this.time);
+      this.post.render(dt, { fear: 1, hit: 1 });
       return;
     }
     if (this.state !== 'play') return;
@@ -374,7 +422,8 @@ export class Game {
 
     // خطوات اللاعب
     if (mv.step) {
-      this.audio.playAt('pstep', null, mv.sprinting ? 1.6 : 1);
+      const ch = roomAt(p.tile().x, p.tile().y);
+      horror.step(this.audio, ch === 'b' || ch === 'h' ? 'wood' : ch === 'c' ? 'dirt' : 'stone', mv.sprinting ? 1.6 : p.crouch ? 0.4 : 1);
       const runBoost = 1 + this.mem.runRatio * 0.5 * this.cfg.adapt;
       const radius = p.crouch ? 1 : mv.sprinting ? 13 * runBoost : 4;
       this.#noise({ radius, precision: mv.sprinting ? 1 : 2 });
@@ -454,7 +503,20 @@ export class Game {
         m.rotation.z = Math.sin(this.time * 40) * 0.03;
       } else m.rotation.z = 0;
     }
-    for (const pk of this.pickups) pk.mesh.rotation.z += dt;
+    // اللمعة: بس لما الكشاف مصوّب عليها
+    const camFwd = new THREE.Vector3();
+    this.camera.getWorldDirection(camFwd);
+    for (const pk of this.pickups) {
+      if (!pk.spark) continue;
+      const to = pk.spark.position.clone().sub(this.camera.position);
+      const d = to.length();
+      const lit = p.flashlightOn && p.battery > 0 && d < 12 && to.normalize().dot(camFwd) > 0.93;
+      pk.spark.material.opacity = 1;
+      pk.spark.visible = lit && Math.sin(this.time * 3 + pk.mesh.position.x) > 0.2;
+    }
+    this.world.update(dt, this.time);
+    this.audio.drone?.setFear(this.audio.fear);
+    this.#ambient(dt, p, mon);
 
     // الفجر
     if (hour >= DAWN_HOUR) {
@@ -477,6 +539,49 @@ export class Game {
       hint: this.#interactTarget()?.label ?? '',
       hidden: !!p.hidden,
     });
-    this.renderer.render(this.scene, this.camera);
+    this.post.render(dt, { fear: this.audio.fear, hidden: p.hidden ? 1 : 0 });
+  }
+
+  // أصوات البيت: رعد وبرق، صرير، نقط مي، عواء، ونفَس السعلوة
+  #ambient(dt, p, mon) {
+    const A = this.audio;
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const randomRoomPos = () => {
+      const rooms = Object.keys(ROOMS);
+      const tiles = roomTiles(rooms[Math.floor(Math.random() * rooms.length)]);
+      const t = tiles[Math.floor(Math.random() * tiles.length)];
+      return { ...tileCenter(t.x, t.y), y: 2.5 };
+    };
+    this.nextLightning -= dt;
+    if (this.nextLightning <= 0) {
+      this.nextLightning = rand(35, 80);
+      this.world.lightning();
+      horror.thunder(A, rand(0.4, 1.6), rand(0.7, 1));
+    }
+    this.nextCreak -= dt;
+    if (this.nextCreak <= 0) {
+      this.nextCreak = rand(6, 16);
+      horror.creak(A, randomRoomPos(), rand(0.5, 1));
+    }
+    this.nextDrip -= dt;
+    if (this.nextDrip <= 0) {
+      this.nextDrip = rand(2, 6);
+      const t = roomTiles('u')[5];
+      horror.drip(A, { ...tileCenter(t.x, t.y), y: 2.8 });
+    }
+    this.nextHowl -= dt;
+    if (this.nextHowl <= 0) {
+      this.nextHowl = rand(80, 150);
+      horror.howl(A, rand(0.5, 0.9));
+    }
+    // نفَسها: بتسمعه لما تكون قريبة
+    this.breathCd -= dt;
+    const d = mon.pos.distanceTo(p.hidden ? p.hidden.pos : p.pos);
+    if (this.breathCd <= 0 && d < 12) {
+      this.breathCd = this.inhale ? 1.2 : 1.6;
+      horror.breath(A, { x: mon.pos.x, y: 2.3, z: mon.pos.z }, mon.state === 'chase' ? 1.4 : 1, this.inhale);
+      this.inhale = !this.inhale;
+      if (mon.state === 'chase' && Math.random() < 0.15) horror.growl(A, { x: mon.pos.x, y: 2, z: mon.pos.z }, 0.8);
+    }
   }
 }
