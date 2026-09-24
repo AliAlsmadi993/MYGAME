@@ -1,7 +1,8 @@
 // بناء البيت بـ Three.js بشكل واقعي: مواد PBR، ظلال، شموع بترجف، ضوء قمر، وأثاث عربي قديم.
 import * as THREE from 'three';
-import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, STAIRS, ROOMS, charAt, isWall, tileCenter, roomAt, roomTiles } from './map.js';
+import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, STAIRS, UPSTAIRS, GLASS, ROOMS, charAt, isWall, tileCenter, roomAt, roomTiles } from './map.js';
 import { materials } from './textures.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 const DOOR_H = 2.3;
 
@@ -76,7 +77,7 @@ export function buildWorld(scene) {
   const C = (x, y) => tileCenter(x, y);
 
   // ---------- الأرضيات ----------
-  const floorMat = { c: M.cobbles, u: M.stone, b: M.wood, a: M.tiles, k: M.tiles, l: M.tiles, h: M.wood, d: M.tiles, e: M.stone, r: M.stone, '.': M.tiles };
+  const floorMat = { c: M.cobbles, u: M.stone, b: M.wood, a: M.tiles, k: M.tiles, l: M.tiles, h: M.wood, d: M.tiles, e: M.stone, r: M.stone, w: M.wood, m: M.wood, n: M.wood, '.': M.tiles };
   const byMat = new Map();
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
@@ -186,11 +187,86 @@ export function buildWorld(scene) {
     scene.add(mesh(new THREE.BoxGeometry(0.32, h, 1.1), M.stone, sd.x - 0.9 + i * 0.32, h / 2, sd.z + 0.55));
   }
   addCollider(sd.x + 0.1, sd.z + 0.55, 1.1, 0.55);
-  const su = C(STAIRS.up.x, STAIRS.up.y);
-  scene.add(mesh(new THREE.PlaneGeometry(1.2, 1.2).rotateX(-Math.PI / 2), M.dark, su.x, 0.01, su.z + 0.5, { cast: false }));
-  for (const [ox, oz, rw, rd] of [[-0.62, 0.5, 0.05, 1.2], [0.62, 0.5, 0.05, 1.2], [0, -0.1, 1.2, 0.05]]) {
-    scene.add(mesh(new THREE.BoxGeometry(rw, 0.9, rd), M.metal, su.x + ox, 0.45, su.z + oz));
+  // فتحة الدرج من فوق: عتمة وسياج
+  const hatch = (t) => {
+    const c = C(t.x, t.y);
+    scene.add(mesh(new THREE.PlaneGeometry(1.2, 1.2).rotateX(-Math.PI / 2), M.dark, c.x, 0.01, c.z + 0.5, { cast: false }));
+    for (const [ox, oz, rw, rd] of [[-0.62, 0.5, 0.05, 1.2], [0.62, 0.5, 0.05, 1.2], [0, -0.1, 1.2, 0.05]]) {
+      scene.add(mesh(new THREE.BoxGeometry(rw, 0.9, rd), M.metal, c.x + ox, 0.45, c.z + oz));
+    }
+  };
+  hatch(STAIRS.up);
+  hatch(UPSTAIRS.up);
+  // درج خشب بالليوان طالع عالحيط الشمالي
+  const ud = C(UPSTAIRS.down.x, UPSTAIRS.down.y);
+  for (let i = 0; i < 7; i++) {
+    const h = 0.25 * (i + 1);
+    scene.add(mesh(new THREE.BoxGeometry(1.1, h, 0.32), M.woodDark, ud.x + 0.55, h / 2, ud.z + 0.9 - i * 0.32));
   }
+  addCollider(ud.x + 0.55, ud.z - 0.1, 0.55, 1.1);
+
+  // ---------- الطابق الفوقاني ----------
+  const U = (tx, ty) => C(tx, ty);
+  // غرفة الخياطة: طاولة ومكنة خياطة، ومانيكان (بتلف لحالها)
+  const tb = U(74, 1);
+  scene.add(mesh(new THREE.BoxGeometry(1.4, 0.75, 0.7), M.wood, tb.x, 0.375, tb.z - 0.6));
+  addCollider(tb.x, tb.z - 0.6, 0.7, 0.35);
+  const sewing = new THREE.Group();
+  mesh(new THREE.BoxGeometry(0.45, 0.12, 0.2), M.dark, 0, 0.06, 0, { parent: sewing });
+  mesh(new THREE.BoxGeometry(0.1, 0.25, 0.18), M.dark, 0.18, 0.2, 0, { parent: sewing });
+  mesh(new THREE.BoxGeometry(0.4, 0.08, 0.14), M.dark, 0.0, 0.32, 0, { parent: sewing });
+  mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 12), M.metal, 0.24, 0.2, 0.1, { parent: sewing, rx: Math.PI / 2 });
+  sewing.position.set(tb.x, 0.75, tb.z - 0.6);
+  scene.add(sewing);
+  const mannequin = new THREE.Group();
+  const dress = new THREE.MeshStandardMaterial({ color: 0x3a1a1a, roughness: 1 });
+  mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 6), M.metal, 0, 0.45, 0, { parent: mannequin });
+  mesh(new THREE.CylinderGeometry(0.22, 0.35, 0.9, 12), dress, 0, 1.1, 0, { parent: mannequin });
+  mesh(new THREE.SphereGeometry(0.2, 12, 8).scale(1, 0.8, 0.7), dress, 0, 1.6, 0, { parent: mannequin });
+  mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.15, 8), M.sheet, 0, 1.8, 0, { parent: mannequin });
+  mesh(new THREE.SphereGeometry(0.11, 10, 8), M.sheet, 0, 1.95, 0, { parent: mannequin });
+  mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.04, 12), M.woodDark, 0, 0.02, 0, { parent: mannequin });
+  const mq = U(74, 3);
+  mannequin.position.set(mq.x + 0.4, 0, mq.z);
+  scene.add(mannequin);
+  addCollider(mq.x + 0.4, mq.z, 0.3, 0.3, false);
+  // خيطان وقماش عالأرض
+  scene.add(mesh(new THREE.PlaneGeometry(1.6, 1.1).rotateX(-Math.PI / 2), M.cloth, U(72, 3).x, 0.012, U(72, 3).z, { cast: false }));
+  // السدّة: كراتين وشنط قديمة ومهد بيهتز
+  for (const [tx, ty, ox, oz, w, h, d] of [[78, 1, -0.6, -0.6, 0.8, 0.6, 0.6], [78, 1, -0.6, -0.6, 0.6, 0.4, 0.5], [82, 4, 0.5, 0.4, 0.9, 0.7, 0.7], [81, 4, 0.2, 0.6, 0.7, 0.5, 0.5], [83, 3, 0.6, 0, 0.5, 0.9, 0.9]]) {
+    const c = U(tx, ty);
+    const stack = scene.children.filter((o) => o.userData.box === `${tx},${ty}`).length;
+    const box = mesh(new THREE.BoxGeometry(w, h, d), M.wood, c.x + ox, h / 2 + stack * 0.6, c.z + oz, { ry: Math.random() * 0.4 });
+    box.userData.box = `${tx},${ty}`;
+    scene.add(box);
+    if (!stack) addCollider(c.x + ox, c.z + oz, w / 2, d / 2);
+  }
+  const cradle = new THREE.Group();
+  const rockerGeo = new THREE.TorusGeometry(0.5, 0.025, 4, 16, Math.PI * 0.5);
+  for (const z of [-0.3, 0.3]) {
+    const r = mesh(rockerGeo, M.woodDark, 0, 0.5, z, { parent: cradle, rz: Math.PI * 1.25 });
+    void r;
+  }
+  mesh(new THREE.BoxGeometry(0.9, 0.35, 0.55), M.wood, 0, 0.3, 0, { parent: cradle });
+  mesh(new THREE.BoxGeometry(0.8, 0.05, 0.45), M.sheet, 0, 0.46, 0, { parent: cradle });
+  const cp = U(78, 3);
+  cradle.position.set(cp.x, 0, cp.z + 0.3);
+  scene.add(cradle);
+  addCollider(cp.x, cp.z + 0.3, 0.45, 0.3, false);
+  // لمبة ميتة معلّقة بالممر
+  const bulb = U(76, 6);
+  scene.add(mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.6, 4), M.dark, bulb.x, WALL_H - 0.3, bulb.z, { cast: false }));
+  scene.add(mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshStandardMaterial({ color: 0x222218, roughness: 0.2 }), bulb.x, WALL_H - 0.64, bulb.z, { cast: false }));
+
+  // ---------- زجاج مكسور ----------
+  const shardGeo = new THREE.CircleGeometry(0.06, 3).rotateX(-Math.PI / 2);
+  const shardMat = new THREE.MeshStandardMaterial({ color: 0x9fb4bc, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.7 });
+  const shards = [];
+  for (const g of GLASS) for (let i = 0; i < 14; i++) shards.push({ ...C(g.x, g.y), a: Math.random() * 6, r: Math.random() * 0.9, s: 0.5 + Math.random() });
+  scene.add(instanced(shardGeo, shardMat, shards, (sh, m4) => {
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sh.a * 3);
+    return m4.compose(new THREE.Vector3(sh.x + Math.cos(sh.a) * sh.r, 0.006, sh.z + Math.sin(sh.a) * sh.r), q, new THREE.Vector3(sh.s, 1, sh.s));
+  }, { cast: false }));
   const roofTiles = roomTiles('r');
   const rc = roofTiles.reduce((a, t) => ({ x: a.x + C(t.x, t.y).x / roofTiles.length, z: a.z + C(t.x, t.y).z / roofTiles.length }), { x: 0, z: 0 });
   // حبل غسيل عليه شراشف بتتحرّك مع الريح
@@ -479,8 +555,12 @@ export function buildWorld(scene) {
 
   // غرفة الجدة: سجادة، مرآة (السحّارة صارت مخبأ)
   put(new THREE.PlaneGeometry(3, 3.5).rotateX(-Math.PI / 2), M.rug, 20, 3, 0, 0.012, 0, { cast: false });
-  const mirror = new THREE.MeshStandardMaterial({ color: 0x223, metalness: 1, roughness: 0.08 });
-  put(new THREE.PlaneGeometry(0.7, 1.2), mirror, 23, 3, 1.2, 1.6, 0, { ry: -Math.PI / 2, cast: false });
+  // مراية حقيقية بتعكس (وأحياناً بيبيّن فيها شي وراك)
+  const mirror = new Reflector(new THREE.PlaneGeometry(0.7, 1.2), { textureWidth: 256, textureHeight: 440, color: 0x8a9090 });
+  const mpos = C(23, 3);
+  mirror.position.set(mpos.x + 1.2, 1.6, mpos.z);
+  mirror.rotation.y = -Math.PI / 2;
+  scene.add(mirror);
   put(new THREE.BoxGeometry(0.06, 1.35, 0.85), M.woodDark, 23, 3, 1.23, 1.6, 0);
 
   // غرفة الأطفال: ألعاب ومهد
@@ -561,7 +641,7 @@ export function buildWorld(scene) {
   // شموع بترجف
   const candles = [];
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xffc070 });
-  const candleSpots = [[3, 8, 1.1, 0.38, 0.3], [21, 1, 0.4, 0.7, -0.8], [4, 1, -1.2, 0.9, -0.8], [5, 16, 0.6, 0.02, 0.6], [14, 16, 0.4, 0.02, 0.5], [22, 7, 0.8, 0.9, -0.8]];
+  const candleSpots = [[3, 8, 1.1, 0.38, 0.3], [21, 1, 0.4, 0.7, -0.8], [4, 1, -1.2, 0.9, -0.8], [5, 16, 0.6, 0.02, 0.6], [14, 16, 0.4, 0.02, 0.5], [22, 7, 0.8, 0.9, -0.8], [74, 1, 0.5, 0.75, -0.6]];
   for (const [tx, ty, ox, y, oz] of candleSpots) {
     const p = C(tx, ty);
     const x = p.x + ox;
@@ -577,6 +657,7 @@ export function buildWorld(scene) {
   }
 
   let lightningT = 0;
+  let sky = 1; // بالطابق الفوقاني ما في قمر (السقف مسكّر وما في شبابيك)
   const skyBase = hemi.intensity;
   return {
     hideMeshes,
@@ -585,7 +666,13 @@ export function buildWorld(scene) {
     wellPos: wp,
     gatePos: gp,
     doors,
+    mannequin,
+    mirror,
+    setSky(on) {
+      sky = on ? 1 : 0;
+    },
     update(dt, t) {
+      cradle.rotation.x = Math.sin(t * 1.6) * (0.06 + this.rock * 0.25);
       for (const [i, sh] of sheets.entries()) sh.rotation.x = Math.sin(t * 1.3 + i) * 0.25 + Math.sin(t * 3.1 + i * 2) * 0.05;
       for (const c of candles) {
         if (!c.lit) continue;
@@ -596,13 +683,14 @@ export function buildWorld(scene) {
       if (lightningT > 0) {
         lightningT -= dt;
         const k = lightningT > 0.35 ? 1 : lightningT > 0.25 ? 0.2 : lightningT > 0.15 ? 0.8 : Math.max(0, lightningT / 0.15) * 0.4;
-        moon.intensity = 1.1 + k * 6;
-        hemi.intensity = skyBase + k * 1.2;
+        moon.intensity = (1.1 + k * 6) * sky;
+        hemi.intensity = (skyBase + k * 1.2) * sky;
       } else {
-        moon.intensity = 1.1;
-        hemi.intensity = skyBase;
+        moon.intensity = 1.1 * sky;
+        hemi.intensity = skyBase * (0.25 + 0.75 * sky);
       }
     },
+    rock: 0, // المهد: بيهتز أقوى وقت الحدث
     lightning() {
       lightningT = 0.5;
     },

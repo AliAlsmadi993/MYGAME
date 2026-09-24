@@ -1,10 +1,11 @@
 // الجولة الواحدة (ليلة): الوقت، الأغراض والأدوات، الضجيج، التمسخر، التقليد، الأحداث، الفوز والموت.
 import * as THREE from 'three';
 import {
-  HIDE_SPOTS, HIDE_KINDS, ITEMS, ROOMS, WELL, GATE, PLAYER_START, RADIO, PHONE, NEST, MONSTER_STARTS, TILE, STAIRS,
+  HIDE_SPOTS, HIDE_KINDS, ITEMS, ROOMS, WELL, GATE, PLAYER_START, RADIO, PHONE, NEST, MONSTER_STARTS, TILE, STAIRWAYS, GLASS,
   roomTiles, roomAt, tileCenter, worldToTile, isWall, findPath, doorTiles, lineOfSight, reachable,
 } from './world/map.js';
 import { buildWorld, pickupMesh } from './world/build.js';
+import { buildBody, animateBody } from './monster/body.js';
 import { Player } from './player.js';
 import { Monster } from './monster/monster.js';
 import * as M from './monster/memory.js';
@@ -106,6 +107,9 @@ export class Game {
     this.lureUses = 0;
 
     this.#setupDoors();
+    this.glass = new Set(GLASS.map((g) => `${g.x},${g.y}`));
+    this.nextHouseScare = 10;
+    this.ghost = null;
     this.pickups = [];
     this.#spawnPickups();
     M.beginRun(mem);
@@ -229,7 +233,7 @@ export class Game {
     for (const d of this.doors) {
       // حركة الباب
       const target = d.open ? Math.PI / 2 * 0.95 : 0;
-      d.angle += (target - d.angle) * Math.min(1, dt * 6);
+      d.angle += (target - d.angle) * Math.min(1, dt * (d.slow ? 1.8 : 6));
       d.hinge.rotation.y = d.base + d.angle;
       if (d.open) continue;
       const c = tileCenter(d.x, d.y);
@@ -259,10 +263,63 @@ export class Game {
     this.monPrevTile = mt;
   }
 
-  // ---------- الدرج والسطح ----------
-  #climb(up) {
+  // ---------- المانيكان والمراية والمهد ----------
+  #houseScares(dt, room) {
     const p = this.player;
-    const to = up ? STAIRS.up : STAIRS.down;
+    const fw = new THREE.Vector3();
+    this.camera.getWorldDirection(fw);
+    const looking = (x, z) => {
+      const dx = x - this.camera.position.x;
+      const dz = z - this.camera.position.z;
+      const d = Math.hypot(dx, dz);
+      return { d, dot: (dx * fw.x + dz * fw.z) / (d || 1) };
+    };
+    // الشبح بالمراية: بيختفي أول ما تلف
+    if (this.ghost) {
+      this.ghost.t -= dt;
+      animateBody(this.ghost.mesh, this.time, { moving: false, chase: false, searching: false });
+      if (this.ghost.t <= 0 || Math.abs(p.yaw - this.ghost.yaw) > 0.7 || room !== 'b') {
+        this.scene.remove(this.ghost.mesh);
+        if (Math.abs(p.yaw - this.ghost.yaw) > 0.7) horror.sting(this.audio, 0.5 * this.audio.screamScale);
+        this.ghost = null;
+      }
+    }
+    this.world.rock = Math.max(0, this.world.rock - dt * 0.1);
+    this.nextHouseScare -= dt;
+    if (this.nextHouseScare > 0 || p.hidden) return;
+    this.nextHouseScare = 2;
+    // المانيكان بتلف لتطلّع عليك لما ما تكون شايفها
+    const mq = this.world.mannequin.position;
+    const m = looking(mq.x, mq.z);
+    if (room === 'm' && m.dot < -0.2 && Math.random() < 0.3) {
+      this.world.mannequin.rotation.y = Math.atan2(p.pos.x - mq.x, p.pos.z - mq.z);
+      horror.creak(this.audio, { x: mq.x, y: 1, z: mq.z }, 0.4);
+      this.nextHouseScare = 25;
+      return;
+    }
+    // المراية: أحياناً بتبيّن واقفة وراك
+    const mr = this.world.mirror.position;
+    const mv = looking(mr.x, mr.z);
+    if (room === 'b' && !this.ghost && mv.d < 4.5 && mv.dot > 0.85 && Math.random() < 0.3) {
+      const mesh = buildBody();
+      const back = p.forward().multiplyScalar(-1.4);
+      mesh.position.set(p.pos.x + back.x, 0, p.pos.z + back.z);
+      mesh.rotation.y = Math.atan2(-back.x, -back.z) + Math.PI;
+      // ضو بارد خفيف حتى يبيّن شكلها بالمراية
+      const glow = new THREE.PointLight(0x9aaccc, 50, 4, 1.5);
+      glow.position.set(0, 2, 0.6);
+      mesh.add(glow);
+      this.scene.add(mesh);
+      this.ghost = { mesh, t: 2.2, yaw: p.yaw };
+      this.audio.playAt('whisper', { x: p.pos.x + back.x, y: 1.7, z: p.pos.z + back.z }, 0.5);
+      this.nextHouseScare = 45;
+    }
+  }
+
+  // ---------- الدرج والسطح ----------
+  #climb(way, up) {
+    const p = this.player;
+    const to = up ? way.up : way.down;
     this.ui.fade(true);
     horror.step(this.audio, 'stone', 0.8);
     this.#noise({ radius: 5, precision: 1.5 });
@@ -316,8 +373,10 @@ export class Game {
       const label = d.open ? 'سكّر الباب' : d.locked ? (this.bag.count('doorkey') ? 'افتح القفل (مفتاح باب)' : 'مقفول… بدك مفتاح') : 'افتح الباب';
       consider({ type: 'door', door: d, label }, at(d, 1.9));
     }
-    consider({ type: 'stairs', up: true, label: 'اطلع عالسطح' }, at(STAIRS.down, 2.3));
-    consider({ type: 'stairs', up: false, label: 'انزل عالحوش' }, at(STAIRS.up, 2));
+    for (const way of STAIRWAYS) {
+      consider({ type: 'stairs', way, up: true, label: way.upLabel }, at(way.down, 2.3));
+      consider({ type: 'stairs', way, up: false, label: way.downLabel }, at(way.up, 2));
+    }
     if (this.bag.count('matches'))
       for (const c of this.world.candles) if (!c.lit) consider({ type: 'candle', candle: c, label: 'ولّع الشمعة (عود كبريت)' }, near(c.pos.x, c.pos.z, 1.8));
     return best;
@@ -340,20 +399,27 @@ export class Game {
         break;
       case 'door': {
         const d = t.door;
+        // منحني = ببطء وبصمت (بس بياخذ وقت)، واقف = بسرعة وبصوت
+        const slow = p.crouch;
+        d.slow = slow;
         if (d.open) {
           if (this.#doorBusy(d)) return this.ui.subtitle('ابعد عن العتبة لتسكّر', 'Step off the threshold to close it', 2);
-          this.#setDoor(d, false);
+          this.#setDoor(d, false, slow);
         } else if (d.locked) {
           if (!this.bag.take('doorkey')) return this.audio.playAt('knock', null, 0.3);
           d.locked = false;
-          this.audio.playAt('unlock', { ...tileCenter(d.x, d.y), y: 1 });
-          this.#setDoor(d, true);
-        } else this.#setDoor(d, true);
-        this.#noise({ radius: 4, precision: 1.5 });
+          this.audio.playAt('unlock', { ...tileCenter(d.x, d.y), y: 1 }, slow ? 0.4 : 1);
+          this.#setDoor(d, true, slow);
+        } else this.#setDoor(d, true, slow);
+        if (slow) {
+          p.frozen = 1;
+          horror.creak(this.audio, { ...tileCenter(d.x, d.y), y: 1.2 }, 0.2);
+          this.#noise({ radius: 1, precision: 1 });
+        } else this.#noise({ radius: 4, precision: 1.5 });
         break;
       }
       case 'stairs':
-        this.#climb(t.up);
+        this.#climb(t.way, t.up);
         break;
       case 'hide':
         if (HIDE_KINDS[t.spot.kind].enterTime) {
@@ -808,6 +874,13 @@ export class Game {
       case 'phone':
         this.#ringPhone();
         break;
+      case 'cradle': {
+        this.world.rock = 1;
+        const t = roomTiles('n')[8];
+        const c = { ...tileCenter(t.x, t.y), y: 0.5 };
+        for (let i = 0; i < 6; i++) setTimeout(() => horror.creak(A, c, 0.35), i * 900);
+        break;
+      }
       case 'laugh':
         A.playAt('laugh', this.#randomRoomPos(), 0.6);
         break;
@@ -1031,10 +1104,22 @@ export class Game {
 
     // خطوات اللاعب
     if (mv.step) {
-      const ch = roomAt(p.tile().x, p.tile().y);
-      horror.step(this.audio, ch === 'b' || ch === 'h' ? 'wood' : ch === 'c' ? 'dirt' : 'stone', mv.sprinting ? 1.6 : p.crouch ? 0.4 : 1);
+      const pt0 = p.tile();
+      const ch = roomAt(pt0.x, pt0.y);
+      const wood = ch === 'b' || ch === 'h' || ROOMS[ch]?.upper;
+      horror.step(this.audio, wood ? 'wood' : ch === 'c' ? 'dirt' : 'stone', mv.sprinting ? 1.6 : p.crouch ? 0.4 : 1);
       const runBoost = 1 + this.mem.runRatio * 0.5 * this.cfg.adapt;
-      const radius = p.crouch ? 1 : mv.sprinting ? 13 * runBoost : 4;
+      let radius = p.crouch ? 1 : mv.sprinting ? 13 * runBoost : 4;
+      // خشب الممر الفوقاني بيصرّ
+      if (ROOMS[ch]?.creaky && (!p.crouch || Math.random() < 0.3)) {
+        horror.creak(this.audio, { x: p.pos.x, y: 0.1, z: p.pos.z }, p.crouch ? 0.3 : 0.7);
+        radius = Math.max(radius, p.crouch ? 3 : 7);
+      }
+      // زجاج مكسور
+      if (this.glass.has(`${pt0.x},${pt0.y}`)) {
+        this.audio.playAt('glass', { x: p.pos.x, y: 0.1, z: p.pos.z }, p.crouch ? 0.5 : 1);
+        radius = Math.max(radius, p.crouch ? 5 : 10);
+      }
       this.#noise({ radius, precision: mv.sprinting ? 1 : 2 });
       if (this.carried.has('anklet')) {
         this.audio.playAt('jingle', null);
@@ -1071,6 +1156,10 @@ export class Game {
     this.#updateDoors(dt);
     this.#direct(dt, fear);
     // السطح: الضباب أخف (بتشوف القرية تحت)
+    this.world.setSky(!ROOMS[room]?.upper);
+    const mr = this.world.mirror.position;
+    this.world.mirror.visible = Math.hypot(mr.x - p.pos.x, mr.z - p.pos.z) < 11;
+    this.#houseScares(dt, room);
     const fogTarget = room === 'r' ? 0.03 : 0.07;
     this.scene.fog.density += (fogTarget - this.scene.fog.density) * Math.min(1, dt * 2);
 
@@ -1250,6 +1339,13 @@ export class Game {
     if (this.nextHowl <= 0) {
       this.nextHowl = rand(80, 150);
       horror.howl(A, rand(0.5, 0.9));
+    }
+    // خطواتها عالخشب الفوقاني بتصرّ (إنذار)
+    this.monCreakCd = (this.monCreakCd ?? 0) - dt;
+    const mt = mon.tile();
+    if (ROOMS[roomAt(mt.x, mt.y)]?.creaky && mon.path?.length && this.monCreakCd <= 0) {
+      this.monCreakCd = 1.1;
+      horror.creak(A, { x: mon.pos.x, y: 0.1, z: mon.pos.z }, 0.9);
     }
     // نفَسها: بتسمعه لما تكون قريبة
     this.breathCd -= dt;

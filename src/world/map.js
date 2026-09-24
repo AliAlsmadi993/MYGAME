@@ -23,10 +23,28 @@ const HOUSE = [
   '###########G#############',
 ];
 
-// السطح: منطقة منفصلة على الشبكة (بعيدة عن البيت) وبتوصلها بالدرج من الحوش
+// الطابق الفوقاني: ممر خشبي بيصرّ، غرفة الخياطة (m)، والسدّة (n). بتطلعله بدرج من الليوان
+const UPPER = [
+  '###############',
+  '#mmmmm#nnnnnnn#',
+  '#mmmmm#nnnnnnn#',
+  '#mmmmm.nnnnnnn#',
+  '#mmmmm#nnnnnnn#',
+  '##.#######.####',
+  '#wwwwwwwwwwwww#',
+  '#wwwwwwwwwwwww#',
+  '###############',
+];
+const UPPER_X = 70;
+
+// السطح والطابق الفوقاني: مناطق منفصلة على الشبكة (بعيدة عن البيت) وبتوصلها بالدرج
 const ROOF = { x0: 46, x1: 52, y0: 5, y1: 10 };
-export const LAYOUT = HOUSE.map(
-  (row, y) => row + Array.from({ length: 30 }, (_, i) => (25 + i >= ROOF.x0 && 25 + i <= ROOF.x1 && y >= ROOF.y0 && y <= ROOF.y1 ? 'r' : '#')).join(''),
+export const LAYOUT = HOUSE.map((row, y) =>
+  Array.from({ length: 86 }, (_, x) => {
+    if (x < row.length) return row[x];
+    if (x >= ROOF.x0 && x <= ROOF.x1 && y >= ROOF.y0 && y <= ROOF.y1) return 'r';
+    return UPPER[y]?.[x - UPPER_X] ?? '#';
+  }).join(''),
 );
 
 export const ROOMS = {
@@ -40,14 +58,22 @@ export const ROOMS = {
   e: { ar: 'المدخل', en: 'Entrance' },
   u: { ar: 'القبو', en: 'Cellar', dark: true },
   r: { ar: 'السطح', en: 'Roof', openSky: true, roof: true },
+  w: { ar: 'الممر الفوقاني', en: 'Upstairs hall', upper: true, creaky: true },
+  m: { ar: 'غرفة الخياطة', en: 'Sewing room', upper: true },
+  n: { ar: 'السدّة', en: 'Attic store', upper: true },
 };
 
 // الدرج: خانتين مربوطات ببعض (من الحوش للسطح)
 export const STAIRS = { down: { x: 18, y: 10 }, up: { x: 46, y: 10 } };
-const LINKS = new Map([
-  [`${STAIRS.down.x},${STAIRS.down.y}`, STAIRS.up],
-  [`${STAIRS.up.x},${STAIRS.up.y}`, STAIRS.down],
-]);
+export const UPSTAIRS = { down: { x: 6, y: 6 }, up: { x: 71, y: 7 } }; // من الليوان للممر الفوقاني
+export const STAIRWAYS = [
+  { ...STAIRS, name: 'roof', upLabel: 'اطلع عالسطح', downLabel: 'انزل عالحوش' },
+  { ...UPSTAIRS, name: 'upper', upLabel: 'اطلع عالطابق الفوقاني', downLabel: 'انزل عالليوان' },
+];
+const LINKS = new Map(STAIRWAYS.flatMap((s) => [[`${s.down.x},${s.down.y}`, s.up], [`${s.up.x},${s.up.y}`, s.down]]));
+
+// زجاج مكسور عالأرض: الدعسة عليه بتطلع صوت عالي
+export const GLASS = [{ x: 76, y: 6 }, { x: 80, y: 2 }, { x: 2, y: 2 }, { x: 13, y: 14 }];
 export const linkedTile = (x, y) => LINKS.get(`${x},${y}`) ?? null;
 
 // أماكن الاختباء والأشياء الثابتة (x = عمود، y = صف)
@@ -63,6 +89,8 @@ export const HIDE_SPOTS = [
   { id: 'curtain_a', kind: 'curtain', x: 12, y: 4, room: 'a' },
   { id: 'stall_d', kind: 'stall', x: 23, y: 10, room: 'd' },
   { id: 'tank_r', kind: 'tank', x: 52, y: 5, room: 'r' },
+  { id: 'wardrobe_m', kind: 'wardrobe', x: 71, y: 1, room: 'm' },
+  { id: 'chest_n', kind: 'chest', x: 83, y: 1, room: 'n' },
 ];
 
 // خصائص كل نوع مخبأ (قسم 15): muffle = كم بيوصل من صوتك، eye = ارتفاع النظر، open = مدة فتحه، breathSave = فرصة النجاة بحبس النفَس
@@ -86,10 +114,10 @@ export const MONSTER_STARTS = [MONSTER_LAIR, { x: 22, y: 8 }, { x: 3, y: 2 }, { 
 
 // الأغراض المطلوبة: الخلخال دائماً بالقبو
 export const ITEMS = [
-  { id: 'rosary', ar: 'مسبحة الجدة', en: "Grandma's rosary", rooms: ['b', 'l', 'a'] },
+  { id: 'rosary', ar: 'مسبحة الجدة', en: "Grandma's rosary", rooms: ['b', 'l', 'a', 'm'] },
   { id: 'anklet', ar: 'الخلخال الفضي', en: 'Silver anklet', rooms: ['u'], jingles: true },
-  { id: 'photo', ar: 'صورة العائلة القديمة', en: 'Old family photo', rooms: ['h', 'a'] },
-  { id: 'key', ar: 'مفتاح السحّارة النحاسي', en: 'Brass chest key', rooms: ['k', 'd', 'h'] },
+  { id: 'photo', ar: 'صورة العائلة القديمة', en: 'Old family photo', rooms: ['h', 'a', 'n'] },
+  { id: 'key', ar: 'مفتاح السحّارة النحاسي', en: 'Brass chest key', rooms: ['k', 'd', 'h', 'n'] },
   { id: 'water', ar: 'قارورة ماء البير القديمة', en: 'Old well-water flask', rooms: ['r', 'k', 'd'] },
 ];
 

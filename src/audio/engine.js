@@ -317,6 +317,21 @@ export class AudioEngine {
         env(0.03, 0.5, 0.45);
         noise(0.55, 'bandpass', 1400);
         break;
+      case 'glass': // دعسة على زجاج مكسور
+        g.gain.value = vol * 0.5;
+        for (let i = 0; i < 5; i++) {
+          const tt = t + i * 0.025 + Math.random() * 0.02;
+          const s = this.#noiseSrc(false);
+          const f = ctx.createBiquadFilter();
+          f.type = 'highpass';
+          f.frequency.value = 3500 + Math.random() * 3000;
+          const og = ctx.createGain();
+          og.gain.setValueAtTime(0.8, tt);
+          og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.05);
+          s.connect(f).connect(og).connect(g);
+          s.start(tt, Math.random() * 2, 0.06);
+        }
+        break;
       case 'splash': // مي الخزان
         env(0.02, 0.9, 0.35);
         noise(1, 'lowpass', 900);

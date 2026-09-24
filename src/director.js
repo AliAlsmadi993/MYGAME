@@ -41,6 +41,7 @@ export const SCARES = [
   { id: 'ceiling', weight: 2 }, // خطوات فوق السقف
   { id: 'radio', weight: 1.5, ok: (c) => !c.radioOn }, // الراديو بيشتغل لحاله
   { id: 'phone', weight: 1.5, ok: (c) => !c.phoneRinging && c.hour >= 1 }, // التلفون الأرضي بيرن
+  { id: 'cradle', weight: 1 }, // المهد بالسدّة بيهتز لحاله
   { id: 'laugh', weight: 1 },
   { id: 'whisper', weight: 1 },
 ];

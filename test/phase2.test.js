@@ -175,7 +175,7 @@ test('item rooms have room for every item', () => {
 
 test('the roof is only reachable by the stairs', async () => {
   const { STAIRS, linkedTile, reachable, lineOfSight, tileCenter, charAt, W } = await import('../src/world/map.js');
-  assert.equal(W, 55);
+  assert.equal(W, 86);
   assert.equal(charAt(STAIRS.down.x, STAIRS.down.y), 'c');
   assert.equal(charAt(STAIRS.up.x, STAIRS.up.y), 'r');
   assert.deepEqual(linkedTile(STAIRS.down.x, STAIRS.down.y), STAIRS.up);
@@ -213,4 +213,22 @@ test('door keys and difficulty lock counts', () => {
   for (const d of Object.values(DIFFICULTIES)) assert.ok(d.lockedDoors >= 1);
   assert.equal(nightConfig(DIFFICULTIES.normal, 2).lockedDoors, DIFFICULTIES.normal.lockedDoors + 1);
   assert.ok(HIDE_KINDS.tank.enterTime > 0);
+});
+
+test('the upper floor connects through the liwan stairs and has its own rooms', async () => {
+  const { UPSTAIRS, STAIRWAYS, GLASS, ROOMS, charAt, reachable, linkedTile } = await import('../src/world/map.js');
+  assert.equal(charAt(UPSTAIRS.down.x, UPSTAIRS.down.y), 'l');
+  assert.equal(charAt(UPSTAIRS.up.x, UPSTAIRS.up.y), 'w');
+  assert.deepEqual(linkedTile(UPSTAIRS.up.x, UPSTAIRS.up.y), UPSTAIRS.down);
+  for (const r of ['w', 'm', 'n']) {
+    assert.ok(ROOMS[r].upper);
+    const t = roomTiles(r)[0];
+    assert.ok(findPath(PLAYER_START, t), `upstairs room ${r}`);
+    assert.ok(findPath(MONSTER_LAIR, t));
+  }
+  const cut = reachable(PLAYER_START, new Set([`${UPSTAIRS.down.x},${UPSTAIRS.down.y}`]));
+  assert.equal(cut.has('75,2'), false);
+  assert.equal(STAIRWAYS.length, 2);
+  for (const g of GLASS) assert.ok(isWalkable(g.x, g.y), `glass ${g.x},${g.y}`);
+  for (const s of HIDE_SPOTS) assert.equal(charAt(s.x, s.y), s.room, s.id);
 });
