@@ -1415,6 +1415,7 @@ export class Game {
       pk.spark.visible = lit && Math.sin(this.time * 3 + pk.mesh.position.x) > 0.2;
     }
     this.world.update(dt, this.time);
+    this.world.setClock(hour);
     this.audio.drone?.setFear(this.audio.fear);
     this.#ambient(dt, p, mon);
 

@@ -91,61 +91,106 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const mix = (a, b, t) => a + (b - a) * t;
 
 // حجر قديم بفواصل (حيطان)
+// حجر بلدي: صفوف بارتفاعات مختلفة، حجارة بعروض مختلفة، حواف مكسّرة، ألوان متفاوتة (كلسي/رمادي/دافي)
 function stone() {
   const n = makeNoise(1);
   const n2 = makeNoise(2);
-  const rows = 6;
+  const hash = (a) => {
+    const x = Math.sin(a * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  // حدود الصفوف (ثابتة حتى يتكرر النسيج بدون فواصل)
+  const hs = [0.14, 0.17, 0.12, 0.16, 0.13, 0.15, 0.13];
+  const sum = hs.reduce((a, b) => a + b, 0);
+  const bounds = [0];
+  for (const h of hs) bounds.push(bounds[bounds.length - 1] + h / sum);
+  // لكل صف: نقاط قطع بين الحجارة
+  const cuts = hs.map((_, r) => {
+    const k = 2 + Math.floor(hash(r + 1) * 3);
+    const off = hash(r + 10);
+    return [...Array(k)].map((_, i) => (off + (i + hash(r * 7 + i) * 0.5) / k) % 1).sort((a, b) => a - b);
+  });
+  const PALETTE = [[0.66, 0.6, 0.5], [0.58, 0.56, 0.52], [0.7, 0.58, 0.44], [0.6, 0.52, 0.42], [0.52, 0.5, 0.47]];
   return bake((u, v) => {
-    const row = Math.floor(v * rows);
-    const off = row % 2 ? 0.5 / 3 : 0;
-    const cols = 3;
-    const cu = (u + off) * cols;
-    const fu = cu - Math.floor(cu);
-    const fv = v * rows - row;
-    const edge = Math.min(fu, 1 - fu, (fv * cols) / rows * 2, ((1 - fv) * cols) / rows * 2);
-    const block = Math.floor(cu) * 7 + row * 13;
-    const mortar = clamp01(edge * 30 - 0.4);
-    const g = n(u, v, 8, 5);
-    const detail = n2(u, v, 32, 3);
-    const tone = 0.85 + ((block * 37) % 17) / 100;
-    const h = mortar * (0.6 + g * 0.4) + detail * 0.15;
-    const dirt = clamp01(n2(u, v, 3, 3) * 1.4 - 0.45);
-    const base = (0.55 + g * 0.25) * tone * (1 - dirt * 0.35);
+    let row = 0;
+    while (row < hs.length - 1 && v >= bounds[row + 1]) row++;
+    const rc = cuts[row];
+    let bi = rc.findIndex((c) => c > u);
+    if (bi < 0) bi = 0;
+    const left = rc[(bi - 1 + rc.length) % rc.length];
+    const right = rc[bi];
+    const du = Math.min(((u - left) % 1 + 1) % 1, ((right - u) % 1 + 1) % 1);
+    const dv = Math.min(v - bounds[row], bounds[row + 1] - v);
+    const chip = n(u, v, 24, 2) * 0.012;
+    const edge = Math.min(du, dv) - chip;
+    const bevel = clamp01(edge / 0.018);
+    const mortar = edge < 0.004;
+    const id = row * 13 + bi * 7;
+    const col = PALETTE[Math.floor(hash(id) * PALETTE.length)];
+    const tone = 0.85 + hash(id + 3) * 0.25;
+    const g = n(u + hash(id), v, 10, 5);
+    const pits = clamp01((n2(u, v, 40, 2) - 0.62) * 6);
+    const dirt = clamp01(n2(u, v, 3, 3) * 1.4 - 0.45) + clamp01(0.2 - v) * 1.5; // رطوبة تحت
+    const lum = (0.75 + g * 0.35) * tone * (1 - dirt * 0.35) * (1 - pits * 0.3) * (0.75 + bevel * 0.25);
+    if (mortar) return { h: 0, r: 0.3, g: 0.28, b: 0.25, rough: 1 };
     return {
-      h,
-      r: mortar ? base * 0.93 : 0.33,
-      g: mortar ? base * 0.84 : 0.3,
-      b: mortar ? base * 0.68 : 0.26,
-      rough: 0.85 + detail * 0.15,
+      h: 0.35 + bevel * 0.45 + g * 0.2 - pits * 0.15,
+      r: col[0] * lum,
+      g: col[1] * lum,
+      b: col[2] * lum,
+      rough: 0.82 + pits * 0.15,
     };
-  }, { bump: 6 });
+  }, { bump: 7 });
 }
 
-// جص مقشّر فوق حجر، مع بقع رطوبة وسيلان
+// جص قديم: طبقة كريمية فيها شقوق رفيعة، رطوبة من تحت وسيلان من فوق، وبقع الجص فيها واقع
+// بيبيّن تحته طوب طين (بلون ترابي فاتح، مش بقع سودا)
 function plaster() {
   const n = makeNoise(3);
   const n2 = makeNoise(4);
   const n3 = makeNoise(5);
+  const n4 = makeNoise(6);
   return bake((u, v) => {
-    const peel = n(u, v, 3, 5);
-    const bare = peel < 0.36; // الجص واقع
+    const peel = n(u, v, 3, 5) + (1 - v) * 0.06; // بيوقع أكثر تحت
+    const lip = clamp01((0.33 - peel) / 0.02); // حافة الجص الواقع
+    const bare = peel < 0.31;
     const g = n2(u, v, 24, 3);
-    const damp = clamp01(n3(u * 0.5, v, 2, 4) * 1.6 - 0.55 + v * 0.35); // الرطوبة أكثر تحت
-    const streak = clamp01(n3(u * 6, v * 0.3, 8, 2) * 1.8 - 1.0) * v;
-    const stain = clamp01(damp + streak);
-    let r = mix(0.72, 0.45, stain) + g * 0.05;
-    let gg = mix(0.66, 0.4, stain) + g * 0.05;
-    let b = mix(0.55, 0.3, stain) + g * 0.04;
+    const damp = clamp01(n3(u * 0.5, v, 2, 4) * 1.5 - 0.6 + v * 0.3);
+    const streak = clamp01(n3(u * 6, v * 0.3, 8, 2) * 1.8 - 1.05) * (1 - v * 0.5);
+    const stain = clamp01(damp * 0.8 + streak * 0.7);
+    // شقوق رفيعة متعرّجة
+    const crackField = Math.abs(n4(u, v, 5, 4) - 0.5);
+    const crack = crackField < 0.006 ? 1 : 0;
+    let r = mix(0.74, 0.52, stain) + g * 0.05;
+    let gg = mix(0.69, 0.47, stain) + g * 0.05;
+    let b = mix(0.58, 0.38, stain) + g * 0.04;
+    let h = 0.6 + g * 0.1;
     if (bare) {
-      r = 0.42 + g * 0.1;
-      gg = 0.36 + g * 0.08;
-      b = 0.28 + g * 0.06;
+      // طوب طين تحت الجص
+      const row = Math.floor(v * 18);
+      const bu = (u * 9 + (row % 2) * 0.5) % 1;
+      const mortar = (v * 18) % 1 < 0.1 || bu < 0.05;
+      const t = 0.5 + g * 0.12;
+      r = mortar ? 0.42 : t * 1.05;
+      gg = mortar ? 0.37 : t * 0.9;
+      b = mortar ? 0.3 : t * 0.7;
+      h = mortar ? 0.1 : 0.3;
+    } else if (lip > 0) {
+      h += lip * 0.2;
+      r *= 1 - lip * 0.15;
+      gg *= 1 - lip * 0.15;
+      b *= 1 - lip * 0.15;
     }
-    return { h: (bare ? 0.2 : 0.6) + g * 0.1 + peel * 0.1, r, g: gg, b, rough: bare ? 0.95 : 0.8 + stain * 0.1 };
+    if (crack && !bare) {
+      r *= 0.5;
+      gg *= 0.5;
+      b *= 0.5;
+      h -= 0.3;
+    }
+    return { h, r, g: gg, b, rough: bare ? 0.95 : 0.82 + stain * 0.1 };
   }, { bump: 5 });
 }
 
-// بلاط أرضيات قديم مزخرف (بلاط شامي) مع تشقق وغبرة
 function tiles() {
   const n = makeNoise(6);
   const n2 = makeNoise(7);

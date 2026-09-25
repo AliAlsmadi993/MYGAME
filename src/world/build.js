@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { W, H, TILE, WALL_H, HIDE_SPOTS, WELL, GATE, PHONE, NEST, STAIRS, UPSTAIRS, GLASS, ROOMS, charAt, isWall, tileCenter, roomAt, roomTiles } from './map.js';
 import { materials } from './textures.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
+import * as P from './props.js';
 
 const DOOR_H = 2.3;
 
@@ -245,6 +246,13 @@ export function buildWorld(scene) {
       const alongX = isWall(x - 1, y) && isWall(x + 1, y); // الباب بفتحة بحيط أفقي
       const lintel = mesh(new THREE.BoxGeometry(TILE, WALL_H - DOOR_H, TILE), M.plaster, p.x, (WALL_H + DOOR_H) / 2, p.z);
       scene.add(lintel);
+      // قوس حجر على وجهين الحيط
+      for (const s of [-1, 1]) {
+        const arch = P.doorArch(TILE * 0.72);
+        arch.position.set(p.x + (alongX ? 0 : s * (TILE / 2 + 0.03)), DOOR_H, p.z + (alongX ? s * (TILE / 2 + 0.03) : 0));
+        arch.rotation.y = alongX ? 0 : Math.PI / 2;
+        scene.add(arch);
+      }
       const beam = new THREE.BoxGeometry(alongX ? TILE * 0.72 : 0.2, 0.14, alongX ? 0.2 : TILE * 0.72);
       for (const s of [-1, 1]) {
         scene.add(mesh(beam, M.woodDark, p.x + (alongX ? 0 : s * TILE * 0.4), DOOR_H - 0.07, p.z + (alongX ? s * TILE * 0.4 : 0)));
@@ -538,14 +546,7 @@ export function buildWorld(scene) {
 
   // ---------- البير بالحوش ----------
   const wp = C(WELL.x, WELL.y);
-  const well = new THREE.Group();
-  const ringGeo = lathe([[0.75, 0], [0.95, 0], [1.0, 0.1], [1.0, 0.85], [0.95, 0.95], [0.75, 0.95], [0.72, 0.9], [0.72, 0]], 20);
-  mesh(ringGeo, M.stone, 0, 0, 0, { parent: well });
-  mesh(new THREE.CircleGeometry(0.72, 20).rotateX(-Math.PI / 2), M.dark, 0, 0.5, 0, { parent: well, cast: false });
-  for (const s of [-1, 1]) mesh(new THREE.BoxGeometry(0.12, 1.9, 0.12), M.woodDark, s * 0.85, 1.4, 0, { parent: well });
-  mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.9, 8), M.woodDark, 0, 2.2, 0, { parent: well, rz: Math.PI / 2 });
-  mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.4, 4), M.sheet, 0.2, 1.5, 0, { parent: well, cast: false });
-  mesh(lathe([[0.12, 0], [0.16, 0.25], [0.15, 0.27]], 10), M.metal, 0.2, 0.75, 0, { parent: well });
+  const well = P.well();
   well.position.set(wp.x, 0, wp.z);
   scene.add(well);
 
@@ -608,27 +609,12 @@ export function buildWorld(scene) {
       mesh(new THREE.BoxGeometry(1.9, 0.08, 2), M.woodDark, 0, 2.34, 0, { parent: g });
       facing();
     } else if (s.kind === 'wardrobe') {
-      mesh(new THREE.BoxGeometry(1.7, 2.3, 1.1), M.wood, 0, 1.2, 0, { parent: g });
-      mesh(new THREE.BoxGeometry(1.8, 0.12, 1.2), M.woodDark, 0, 2.4, 0, { parent: g });
-      mesh(new THREE.BoxGeometry(1.8, 0.1, 1.2), M.woodDark, 0, 0.05, 0, { parent: g });
-      for (const x of [-0.42, 0.42]) {
-        mesh(new THREE.BoxGeometry(0.8, 2.1, 0.05), M.woodDark, x, 1.2, 0.56, { parent: g });
-        mesh(new THREE.BoxGeometry(0.6, 1.6, 0.03), M.wood, x, 1.2, 0.59, { parent: g });
-        mesh(new THREE.SphereGeometry(0.035, 6, 4), M.metal, x > 0 ? 0.08 : -0.08, 1.2, 0.62, { parent: g, cast: false });
-      }
+      g.add(P.wardrobe());
       const open = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dx, dy]) => !isWall(s.x + dx, s.y + dy)) || [0, 1];
       g.rotation.y = Math.atan2(open[0], open[1]);
     } else {
-      // سرير نحاس مع شرشف نازل للأرض
-      const brass = M.metal;
-      for (const [x, z, h] of [[-0.7, -1.1, 1.2], [0.7, -1.1, 1.2], [-0.7, 1.1, 0.8], [0.7, 1.1, 0.8]]) {
-        mesh(new THREE.CylinderGeometry(0.03, 0.03, h, 6), brass, x, h / 2, z, { parent: g });
-        mesh(new THREE.SphereGeometry(0.05, 6, 4), brass, x, h, z, { parent: g });
-      }
-      for (const [z, h] of [[-1.1, 1.1], [1.1, 0.72]]) mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.4, 6), brass, 0, h, z, { parent: g, rz: Math.PI / 2 });
-      mesh(new THREE.BoxGeometry(1.4, 0.2, 2.2), M.sheet, 0, 0.6, 0, { parent: g });
-      mesh(new THREE.BoxGeometry(1.5, 0.45, 2.3), M.sheet, 0, 0.5, 0, { parent: g, cast: false });
-      mesh(new THREE.BoxGeometry(0.6, 0.12, 0.4), M.sheet, 0, 0.76, -0.8, { parent: g });
+      // سرير نحاس بلحاف نازل للأرض
+      g.add(P.bed());
     }
     g.position.set(p.x, 0, p.z);
     scene.add(g);
@@ -657,20 +643,32 @@ export function buildWorld(scene) {
   // الليوان: فرشات عربية ومساند وطبلية وسجادة
   const rugGeo = new THREE.PlaneGeometry(3, 4).rotateX(-Math.PI / 2);
   put(rugGeo, M.rug, 3, 8, 0.8, 0.012, 0, { cast: false });
-  for (let y = 6; y <= 10; y++) {
-    put(new THREE.BoxGeometry(0.8, 0.2, TILE - 0.05), M.cloth, 1, y, -0.75, 0.1, 0, { solid: true });
-    put(new THREE.BoxGeometry(0.25, 0.5, 0.6), M.cloth, 1, y, -1.05, 0.45, 0, { rz: -0.2 });
-  }
+  // فرشات بنقشة السدو على طول الحيط (قطعة لكل خانة)
+  const cushionAt = (tx, ty, ox, oz, ry) => {
+    const p = C(tx, ty);
+    const c = P.floorCushion(TILE - 0.08);
+    c.position.set(p.x + ox, 0, p.z + oz);
+    c.rotation.y = ry;
+    scene.add(c);
+    const along = Math.abs(Math.sin(ry)) > 0.5;
+    addCollider(p.x + ox, p.z + oz, along ? TILE * 0.45 : 0.36, along ? 0.36 : TILE * 0.45);
+  };
+  for (let y = 6; y <= 10; y++) cushionAt(1, y, -0.75, 0, 0);
   put(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 20), M.wood, 3, 8, 0.8, 0.35, 0);
   put(new THREE.CylinderGeometry(0.4, 0.45, 0.3, 12, 1, true), M.woodDark, 3, 8, 0.8, 0.16, 0);
   put(dallah, M.metal, 3, 8, 0.7, 0.38, 0.1);
-  put(new THREE.BoxGeometry(0.5, 1, 0.22), M.woodDark, 3, 6, 0, 2.0, -1.12); // ساعة الحيط
-  put(new THREE.CircleGeometry(0.17, 16), M.sheet, 3, 6, 0, 2.15, -1.0, { cast: false });
+  // ساعة الحيط برقّاص
+  const clock = P.wallClock();
+  clock.position.set(C(3, 6).x, 2.0, 6 * TILE + 0.19);
+  scene.add(clock);
 
   // المضافة
   put(new THREE.PlaneGeometry(3.5, 2.5).rotateX(-Math.PI / 2), M.rug, 11, 2, 0, 0.012, 0, { cast: false });
-  for (let x = 9; x <= 13; x++) put(new THREE.BoxGeometry(TILE - 0.05, 0.25, 0.8), M.cloth, x, 1, 0, 0.12, -0.75, { solid: true });
-  put(new THREE.BoxGeometry(0.5, 0.35, 0.3), M.woodDark, 8, 4, -0.7, 0.9, 0.7); // راديو قديم
+  for (let x = 9; x <= 13; x++) cushionAt(x, 1, 0, -0.75, -Math.PI / 2);
+  const rad = P.radio(); // راديو قديم
+  rad.position.set(C(8, 4).x - 0.7, 0.8, C(8, 4).z + 0.7);
+  rad.rotation.y = Math.PI / 2;
+  scene.add(rad);
   put(new THREE.BoxGeometry(0.6, 0.8, 0.5), M.wood, 8, 4, -0.7, 0.4, 0.7, { solid: true });
   put(dallah, M.metal, 12, 2, 0.3, 0.02, 0.4);
 
@@ -774,14 +772,16 @@ export function buildWorld(scene) {
     const p = C(tx, ty);
     const x = p.x + ox;
     const z = p.z + oz;
-    scene.add(mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.18, 8), M.sheet, x, y + 0.09, z));
+    const holder = P.candleHolder();
+    holder.position.set(x, y, z);
+    scene.add(holder);
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.06, 6), flameMat);
-    flame.position.set(x, y + 0.21, z);
+    flame.position.set(x, y + 0.32, z);
     scene.add(flame);
     const light = new THREE.PointLight(0xff9a45, 3, 8, 1.8);
-    light.position.set(x, y + 0.35, z);
+    light.position.set(x, y + 0.45, z);
     scene.add(light);
-    candles.push({ light, flame, base: 3, seed: Math.random() * 100, lit: true, room: roomAt(tx, ty), pos: { x, y: y + 0.3, z } });
+    candles.push({ light, flame, base: 3, seed: Math.random() * 100, lit: true, room: roomAt(tx, ty), pos: { x, y: y + 0.4, z } });
   }
 
   let lightningT = 0;
@@ -795,12 +795,19 @@ export function buildWorld(scene) {
     gatePos: gp,
     doors,
     mannequin,
+    // ساعة الحيط: الرقّاص بيتمرجح والعقارب بتمشي مع وقت الليلة
+    setClock(hour) {
+      const u = clock.userData;
+      u.hour.rotation.z = -((hour % 12) / 12) * Math.PI * 2;
+      u.minute.rotation.z = -(hour % 1) * Math.PI * 2;
+    },
     mirror,
     setSky(on) {
       sky = on ? 1 : 0;
     },
     update(dt, t) {
       cradle.rotation.x = Math.sin(t * 1.6) * (0.06 + this.rock * 0.25);
+      clock.userData.pend.rotation.z = Math.sin(t * Math.PI) * 0.22;
       for (const [i, sh] of sheets.entries()) sh.rotation.x = Math.sin(t * 1.3 + i) * 0.25 + Math.sin(t * 3.1 + i * 2) * 0.05;
       for (const c of candles) {
         if (!c.lit) continue;
