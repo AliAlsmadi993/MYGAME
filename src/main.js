@@ -4,7 +4,7 @@ import { AudioEngine } from './audio/engine.js';
 import { Mic } from './audio/mic.js';
 import { Mimic } from './audio/mimic.js';
 import { loadMemory, clearMemory, emptyMemory } from './monster/memory.js';
-import { DIFFICULTIES, NIGHTS, nightConfig } from './config.js';
+import { DIFFICULTIES, NIGHTS, nightConfig, DEMO } from './config.js';
 import { Game } from './game.js';
 import { loadProgress, clearProgress, emptyProgress, ACHIEVEMENTS, nightTwoUnlocked } from './progress.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -58,7 +58,7 @@ const keys = {};
 
 // ---------- الواجهة ----------
 const show = (id) => {
-  for (const s of ['warn', 'menu', 'book', 'calib', 'pause', 'end']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['warn', 'menu', 'book', 'privacy', 'calib', 'pause', 'end']) $(s).classList.toggle('hidden', s !== id);
   $('hud').classList.toggle('hidden', id !== null);
 };
 
@@ -221,8 +221,8 @@ function renderNights() {
   $('nights').innerHTML = '';
   for (const n of Object.keys(NIGHTS).map(Number)) {
     const b = document.createElement('button');
-    const open = n === 1 || nightTwoUnlocked(progress);
-    b.textContent = open ? NIGHTS[n].ar : `🔒 ${NIGHTS[n].ar} (انجُ مرة)`;
+    const open = n === 1 || (!DEMO && nightTwoUnlocked(progress));
+    b.textContent = open ? NIGHTS[n].ar : `🔒 ${NIGHTS[n].ar} (${DEMO ? 'بالنسخة الكاملة' : 'انجُ مرة'})`;
     b.disabled = !open;
     if (!open && night === n) night = 1;
     b.classList.toggle('on', n === night);
@@ -247,10 +247,21 @@ const DIFF_NOTES = {
   friday: 'أسرع، بتتكيّف أسرع، وبطاريات أقل.',
   merciless: 'بلا مؤشرات وبلا خرزة زرقاء. الموت بيمسح ذاكرتها… وبتبلّش من الصفر.',
 };
+if (DEMO) {
+  const tag = document.createElement('p');
+  tag.className = 'tag';
+  tag.textContent = 'نسخة تجريبية مجانية: لحد الساعة 2:00';
+  document.querySelector('#menu .tag').after(tag);
+}
 const renderDiffNote = () => ($('diffNote').textContent = DIFF_NOTES[difficulty]);
 for (const [id, d] of Object.entries(DIFFICULTIES)) {
   const b = document.createElement('button');
   b.textContent = d.ar;
+  // التجريبية: بلا رحمة بالنسخة الكاملة بس
+  if (DEMO && id === 'merciless') {
+    b.disabled = true;
+    b.textContent += ' 🔒';
+  }
   b.classList.toggle('on', id === difficulty);
   b.onclick = () => {
     difficulty = id;
@@ -364,6 +375,8 @@ $('btnBook').onclick = () => {
   show('book');
 };
 $('btnBookBack').onclick = () => show('menu');
+$('btnPrivacy').onclick = () => show('privacy');
+$('btnPrivacyBack').onclick = () => show('menu');
 $('btnShare').onclick = () => lastEnd && shareCard(lastEnd);
 $('btnWipeBook').onclick = () => {
   clearProgress();
@@ -434,7 +447,7 @@ async function startNight() {
   resize();
   show(null);
   game.start();
-  canvas.requestPointerLock?.();
+  lockPointer();
 }
 
 $('btnStart').onclick = startNight;
@@ -458,6 +471,15 @@ function resetScene() {
 }
 
 // ---------- الإدخال ----------
+// بالمتصفحات الجديدة بترجع Promise بيرفض إذا ما في كبسة من اللاعب: منتجاهله
+function lockPointer() {
+  try {
+    canvas.requestPointerLock?.()?.catch?.(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 addEventListener('keydown', (e) => {
   if (rebinding) {
     e.preventDefault();
@@ -496,13 +518,13 @@ addEventListener('mousemove', (e) => {
 addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
   if (!game || game.state !== 'play') return;
-  if (document.pointerLockElement !== canvas) return canvas.requestPointerLock?.();
+  if (document.pointerLockElement !== canvas) return lockPointer();
   if (e.button === 2) game.useTool();
 });
 // شاشة الإيقاف: كمّل، الإعدادات (نفس صندوق القائمة بينتقل لهون)، أو اترك الليلة
 const settingsHome = { parent: $('settingsBox').parentNode, next: $('settingsBox').nextSibling };
 const settingsBackHome = () => settingsHome.parent.insertBefore($('settingsBox'), settingsHome.next);
-$('btnResume').onclick = () => canvas.requestPointerLock?.();
+$('btnResume').onclick = () => lockPointer();
 $('btnPauseSettings').onclick = () => {
   $('pauseSettings').append($('settingsBox'));
   $('settingsBox').open = true;

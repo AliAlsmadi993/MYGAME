@@ -12,7 +12,7 @@ import * as M from './monster/memory.js';
 import { pickTaunt } from './monster/taunts.js';
 import { DIALECTS } from './monster/dialects.js';
 import { levelToNoise } from './audio/mic.js';
-import { DAWN_HOUR } from './config.js';
+import { DAWN_HOUR, DEMO, DEMO_END_HOUR } from './config.js';
 import { createPost } from './post.js';
 import { horror } from './audio/horror.js';
 import { Bag, TOOLS } from './inventory.js';
@@ -1422,6 +1422,11 @@ export class Game {
     if (hour >= DAWN_HOUR) {
       this.audio.playAt('shriek', { x: mon.pos.x, y: 2, z: mon.pos.z });
       this.#end('dawn');
+      return;
+    }
+    if (DEMO && hour >= DEMO_END_HOUR) {
+      this.audio.playAt('laugh', { x: mon.pos.x, y: 2, z: mon.pos.z }, 0.7);
+      this.#end('demo');
       return;
     }
 

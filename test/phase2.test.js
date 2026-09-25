@@ -268,3 +268,13 @@ test('twitch chat parsing and audience votes', async () => {
   assert.equal(v.close(), null);
   for (const a of Object.values(ACTIONS)) assert.ok(commandOf(a.cmd));
 });
+
+test('the demo ending is not a win and unlocks nothing', () => {
+  const p = P.emptyProgress();
+  const fresh = P.finishRun(p, { ending: 'demo', night: 1, micOn: true, spoke: false });
+  assert.equal(p.wins, 0);
+  assert.equal(P.nightTwoUnlocked(p), false);
+  assert.ok(!fresh.includes('first_escape') && !fresh.includes('silent'));
+  assert.ok(ENDINGS.demo.title);
+  assert.equal(resolveEnding({ result: 'demo' }), 'demo');
+});

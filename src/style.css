@@ -395,7 +395,8 @@ button:disabled {
 /* القائمة فوق مشهد البيت تحت المطر */
 #warn,
 #menu,
-#book {
+#book,
+#privacy {
   background: linear-gradient(180deg, rgba(5, 4, 4, 0.35), rgba(5, 4, 4, 0.8) 60%);
 }
 #caps {

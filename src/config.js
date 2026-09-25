@@ -40,3 +40,9 @@ export function nightConfig(diff, night) {
 
 export const START_HOUR = 0; // 12:00 منتصف الليل
 export const DAWN_HOUR = 5; // 5:00 الفجر
+
+// النسخة التجريبية (قسم 26): بتخلص الساعة 2:00، بدون الليلة الثانية وبلا رحمة.
+// بتنبني بـ npm run build:demo، أو بتجرّبها بإضافة ?demo للرابط.
+/* global __DEMO__ */
+export const DEMO = (typeof __DEMO__ !== 'undefined' && __DEMO__) || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo'));
+export const DEMO_END_HOUR = 2;

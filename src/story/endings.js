@@ -22,6 +22,11 @@ export const ENDINGS = {
     lines: ['هي ما كانت بدها تأذيك… كانت بدها خلخالها. بس لما طلعت من البوابة، سمعت خطوات حافية وراك. رنّة خلخال. طلعت معك.', 'She never wanted to hurt you… she wanted her anklet. But as you left through the gate, you heard bare footsteps behind you. The jingle of an anklet. She came with you.'],
     taunt: '«وين بيتك؟… بيتك بيتي»',
   },
+  demo: {
+    title: 'نهاية النسخة التجريبية',
+    lines: ['الساعة ثنتين… والليلة لسا طويلة. بالنسخة الكاملة: خمس ساعات لحد الفجر، أربع نهايات، ليلة ثانية، السطح والطابق الفوقاني… وهي لسا ما خلّصت معك.', "It's 2 AM… and the night is still long. The full game: five hours until dawn, four endings, a second night, the roof and the upper floor… and she isn't done with you."],
+    taunt: '«ارجع… بستناك بالنسخة الكاملة»',
+  },
   death: {
     title: 'مسكتك',
     lines: null,

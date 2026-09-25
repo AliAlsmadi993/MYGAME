@@ -1,0 +1,40 @@
+# سياسة الخصوصية — «السعلوة»
+
+**باختصار: كل شي بيضل على جهازك. اللعبة ما عندها سيرفر، وما بتبعت أي شي عنك لأي مكان.**
+
+## المايك
+- اللعبة بتستعمل المايك لتقيس **قديش صوتك عالي** (هيك السعلوة "بتسمعك"). هاد القياس بيصير لحظياً على جهازك وما بينحفظ.
+- إذا سمحت بـ«تقليد صوتي»: اللعبة بتحفظ **مقاطع قصيرة** (1–3 ثواني) لما تحكي أو تصرّخ، لتشغّلها السعلوة مشوّهة داخل اللعبة.
+  - المقاطع محفوظة **على جهازك فقط** (IndexedDB بالمتصفح)، وما بتنرفع لأي مكان.
+  - بتنحذف **تلقائياً بعد 7 أيام**، وأكثر شي 12 مقطع.
+  - بتقدر تحذفها كلها بأي وقت من القائمة: «احذف كل تسجيلات صوتي».
+- مسجّل الكاسيت داخل اللعبة بيسجّل بس لما تستعمله إنت، والتسجيل بينحذف مع نهاية الليلة.
+- بتقدر تلعب **بدون مايك**، أو بالمايك **بدون تسجيل** (بيقيس الصوت بس).
+
+## شو بينحفظ كمان على جهازك (localStorage)
+- **ذاكرة السعلوة:** عاداتك باللعب (مخابئك، طرقك، ركضك، استعمالك للكشاف). بتنمسح بزر «خلّيها تنساني».
+- **دفتر الجدة:** الأشرطة والنهايات والإنجازات. بينمسح من الإعدادات.
+- **الإعدادات.**
+
+## ميزات الستريمرز (كلها اختيارية ومطفية بالأساس)
+- **آخر لحظات كفيديو:** بيتسجّل صوت وصورة **اللعبة** بس (مش المايك مباشرة، بس ممكن يطلع فيه صوتك إذا السعلوة قلّدته)، والفيديو ما بيطلع من جهازك إلا إذا نزّلته إنت.
+- **تصويت جمهور تويتش:** اللعبة بتتصل بشات تويتش **للقراءة فقط** بدخول مجهول (بدون حساب)، وبتقرأ أوامر التصويت. ما بتبعت أي رسالة ولا أي معلومة عنك.
+- **وضع الستريمر:** بينبّهك قبل ما يشتغل أي تسجيل من صوتك، وبيخفي أسماء أجهزة المايك.
+
+## خدمات خارجية
+- الخطوط (Google Fonts) بتنحمّل من جوجل بنسخة المتصفح.
+- قراءة جمل السعلوة بتستعمل صوت القراءة الآلية بمتصفحك أو نظامك.
+- ما في إعلانات، ولا تتبّع، ولا إحصائيات.
+
+## العمر
+اللعبة مخيفة وفيها ومضات وأصوات مفاجئة: **16+**.
+
+---
+
+# Privacy policy (English)
+
+Everything stays on your device. The game has no server and sends nothing about you anywhere.
+The microphone measures loudness in real time. If you allow voice mimicry, short clips (1–3 s) are stored locally in your browser (IndexedDB), deleted automatically after 7 days, and can be deleted at any time from the menu. You can play without a microphone, or with the microphone but no recording.
+Her memory of your habits, grandma's notebook and your settings are stored locally (localStorage) and can be erased from the menu.
+Streamer features are opt-in: the last-moments video is only saved if you download it; Twitch voting reads public chat anonymously and sends nothing.
+No ads, no tracking, no analytics. Rated 16+.

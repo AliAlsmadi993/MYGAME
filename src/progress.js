@@ -71,7 +71,7 @@ export const recorderUnlocked = (p) => p.wins > 0;
 // نهاية الليلة: بنسجّل النتيجة وبنرجّع الإنجازات الجديدة
 // run = { ending, night, difficulty, micOn, spoke, mimics, favHideAtStart, usedFav, beadSaved, saltBlocked }
 export function finishRun(p, run) {
-  const won = run.ending !== 'death';
+  const won = run.ending !== 'death' && run.ending !== 'demo';
   addOnce(p.endings, run.ending);
   p.mimicsHeard += run.mimics || 0;
   const fresh = [];

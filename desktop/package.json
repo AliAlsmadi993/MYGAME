@@ -1,0 +1,23 @@
+{
+  "name": "salwa-desktop",
+  "version": "1.0.0",
+  "description": "السعلوة — نسخة الكمبيوتر (Electron)",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --linux"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.salwa.game",
+    "productName": "Al-Si'lwa",
+    "files": ["main.cjs", "app/**"],
+    "directories": { "output": "out" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}

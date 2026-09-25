@@ -1,6 +1,23 @@
 // أذن السعلوة: قراءة المايك، المعايرة، بوابة الضجيج، والتقاط مقاطع من صوت اللاعب.
 const BLOCK = 2048;
 
+// معالجة المايك بخيط الصوت (AudioWorklet، قسم 24): بيجمّع كتل 2048 عيّنة وبيبعتها للخيط الرئيسي.
+// الكود كنص + Blob حتى يشتغل كمان بنسخة الملف الواحد (play.html)
+const WORKLET = `
+class SalwaMic extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(${BLOCK}); this.n = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) for (let i = 0; i < ch.length; i++) {
+      this.buf[this.n++] = ch[i];
+      if (this.n === ${BLOCK}) { this.port.postMessage(this.buf.slice()); this.n = 0; }
+    }
+    return true;
+  }
+}
+registerProcessor('salwa-mic', SalwaMic);
+`;
+
 export class Mic {
   constructor(engine) {
     this.engine = engine;
@@ -34,17 +51,35 @@ export class Mic {
     if (deviceId) audio.deviceId = { exact: deviceId };
     this.stream = await navigator.mediaDevices.getUserMedia({ audio });
     const src = ctx.createMediaStreamSource(this.stream);
-    const proc = ctx.createScriptProcessor(BLOCK, 1, 1);
     const sink = ctx.createGain();
     sink.gain.value = 0;
+    let proc = null;
+    if (ctx.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+      try {
+        if (!this.engine.micWorklet) {
+          const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+          this.engine.micWorklet = ctx.audioWorklet.addModule(url);
+        }
+        await this.engine.micWorklet;
+        proc = new AudioWorkletNode(ctx, 'salwa-mic', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+        proc.port.onmessage = (e) => this.#process(e.data, ctx.sampleRate);
+      } catch {
+        proc = null;
+      }
+    }
+    if (!proc) {
+      // متصفحات قديمة: ScriptProcessor
+      proc = ctx.createScriptProcessor(BLOCK, 1, 1);
+      proc.onaudioprocess = (e) => this.#process(e.inputBuffer.getChannelData(0), ctx.sampleRate);
+    }
     src.connect(proc).connect(sink).connect(ctx.destination);
-    proc.onaudioprocess = (e) => this.#process(e.inputBuffer.getChannelData(0), ctx.sampleRate);
     this.proc = proc;
     this.enabled = true;
   }
 
   disable() {
     this.stream?.getTracks().forEach((t) => t.stop());
+    if (this.proc?.port) this.proc.port.onmessage = null;
     this.proc?.disconnect();
     this.enabled = false;
     this.level = 0;
