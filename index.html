@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>السعلوة</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="./assets/index-N5CqQaC-.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-8g9q8sCL.css">
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hideMask" class="hidden"></div>
+
+    <section id="warn" class="screen">
+      <h2>تحذير</h2>
+      <div class="box">
+        <p>هاللعبة بتستخدم <b>المايك</b>: السعلوة بتسمع صوتك الحقيقي، وممكن تقلّده.</p>
+        <p>🎧 العب بالسماعات وبالعتمة. فيها مشاهد مخيفة وومضات وأصوات مفاجئة. عمر 16+.</p>
+        <p class="small">🔒 تسجيلات صوتك بتضل على جهازك فقط، وبتقدر تحذفها أو تلعب بدون مايك من القائمة.</p>
+      </div>
+      <button id="btnWarnOk" class="big">فهمت</button>
+    </section>
+
+    <section id="menu" class="screen hidden">
+      <h1>السعلوة</h1>
+      <p class="tag">بتسمعك… بتتذكّرك… وبتقلّد صوتك.</p>
+      <p class="tag en">She hears you. She remembers you. She speaks with your voice.</p>
+
+      <div class="box">
+        <h3>الصعوبة</h3>
+        <div id="diffs" class="row"></div>
+        <p id="diffNote" class="small"></p>
+        <h3>الليلة</h3>
+        <div id="nights" class="row"></div>
+      </div>
+
+      <div class="box">
+        <label><input type="checkbox" id="optMic" checked /> استخدم المايك (السعلوة بتسمع صوتك الحقيقي) — مستحسن</label>
+        <label><input type="checkbox" id="optRec" checked /> اسمح لها تقلّد صوتي</label>
+        <p class="small">
+          🔒 التسجيلات مقاطع قصيرة بتضل <b>على جهازك فقط</b>، وما بتنرفع لأي مكان، وبتنحذف تلقائياً بعد أسبوع.
+        </p>
+        <div class="row">
+          <button id="btnDelClips" class="ghost">احذف كل تسجيلات صوتي</button>
+          <button id="btnForget" class="ghost">خلّيها تنساني (مسح الذاكرة)</button>
+        </div>
+        <p id="memInfo" class="small"></p>
+      </div>
+
+      <div class="row">
+        <button id="btnStart" class="big">ابدأ الليلة</button>
+        <button id="btnBook">📖 دفتر الجدة</button>
+        <button id="btnStudio">🎙️ استوديو الأصوات</button>
+        <button id="btnPrivacy" class="ghost">🔒 الخصوصية والمصادر</button>
+      </div>
+
+      <details class="box" id="settingsBox">
+        <summary>⚙️ الإعدادات</summary>
+        <h3>الصوت والصورة</h3>
+        <label>الصوت العام <input type="range" id="setVolMaster" min="0" max="1" step="0.05" /></label>
+        <label>صوت السعلوة وتسجيلاتك <input type="range" id="setVolVoice" min="0" max="1.5" step="0.05" /></label>
+        <label>الأجواء (ريح ومطر وهمهمة) <input type="range" id="setVolAmb" min="0" max="1.5" step="0.05" /></label>
+        <label>السطوع <input type="range" id="setBright" min="0.6" max="1.8" step="0.05" /></label>
+        <label><input type="checkbox" id="setGrain" /> حبيبات الفيلم</label>
+        <label><input type="checkbox" id="setShake" /> ارتجاف الصورة وهزّة المشي</label>
+        <label><input type="checkbox" id="setCaptions" /> ترجمة للأصوات المهمة (مثل [باب انصفق — يمين])</label>
+        <h3>الأزرار</h3>
+        <div id="keyBinds" class="keys"></div>
+        <button id="btnKeysReset" class="ghost">رجّع الأزرار الافتراضية</button>
+        <h3>عام</h3>
+        <label>حساسية الماوس <input type="range" id="setSens" min="0.3" max="2.5" step="0.1" /></label>
+        <label><input type="checkbox" id="setInvert" /> اعكس المحور العمودي</label>
+        <label><input type="checkbox" id="setFlash" /> قلّل الومضات (بدون برق)</label>
+        <label><input type="checkbox" id="setScream" /> قلّل الصراخ المفاجئ</label>
+        <label><input type="checkbox" id="setMicMeter" /> اعرض مؤشر المايك</label>
+        <label><input type="checkbox" id="setStreamer" /> وضع الستريمر: تنبيه قبل تشغيل أي تسجيل من صوتي</label>
+        <label>حساسية المايك <input type="range" id="setMicGain" min="0.5" max="2" step="0.1" /></label>
+        <label>جهاز المايك <select id="setMicDevice"><option value="">الافتراضي</option></select></label>
+        <label>صوت السعلوة
+          <select id="setVoice"><option value="ar">عربي</option><option value="en">English</option></select>
+        </label>
+        <label>لهجتها
+          <select id="setDialect"><option value="levant">شامي</option><option value="gulf">خليجي</option><option value="iraq">عراقي</option><option value="egypt">مصري</option></select>
+        </label>
+        <button id="btnRecalib" class="ghost">أعد معايرة المايك</button>
+        <h3>للستريمرز</h3>
+        <label><input type="checkbox" id="setClip" /> احفظ آخر لحظات من الليلة كفيديو (بيضل على جهازك)</label>
+        <label>تصويت جمهور تويتش — اسم القناة: <input type="text" id="setTwitch" placeholder="فاضي = مطفي، test = تجربة" dir="ltr" /></label>
+        <p class="small">الأوامر بالشات: !ضو (اطفي الكشاف) · !غني (خلّيها تغني) · !باب (سكّر باب) · !خوف (حدث مخيف). تصويت كل 40 ثانية.</p>
+        <button id="btnWipeBook" class="ghost">امسح دفتر الجدة والإنجازات</button>
+      </details>
+
+      <div class="box small controls">
+        <b>التحكم:</b> WASD مشي · Shift ركض · C انحناء · Q/R ميلان · F الكشاف · E تفاعل/اختباء · 1-4 أو عجلة الماوس اختيار أداة · G أو زر الماوس الأيمن استعمالها · X رميها · Space حبس النفَس (بالمخبأ) · Tab الأغراض · Esc إيقاف
+        <br />🎧 العب بالسماعات، وبالعتمة. عمر 16+.
+      </div>
+    </section>
+
+    <section id="book" class="screen hidden">
+      <h2>دفتر الجدة</h2>
+      <div class="box">
+        <h3>الأشرطة</h3>
+        <div id="bookTapes"></div>
+      </div>
+      <div class="box">
+        <h3>النهايات</h3>
+        <ul id="bookEndings"></ul>
+      </div>
+      <div class="box">
+        <h3>الإنجازات</h3>
+        <ul id="bookAch" class="ach"></ul>
+      </div>
+      <button id="btnBookBack">رجوع</button>
+    </section>
+
+    <section id="studio" class="screen hidden">
+      <h2>استوديو الأصوات</h2>
+      <p class="small">كل تسجيل بيضل على جهازك بس. الصوت الحقيقي بيحل محل الصوت المولّد والقراءة الآلية.</p>
+      <div class="box">
+        <h3>🧍 صوتك إنت — السعلوة بتناديك فيه</h3>
+        <p class="small">سجّل كل جملة بصوتك العادي (اكبس «سجّل»، احكي، واكبس «وقّف»). بتسمعها بالليل من غرف معتمة، وبتهمس اسمك وإنت مخبّى.</p>
+        <div id="studioMe" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>👁️ صوت السعلوة</h3>
+        <p class="small">سجّل الجمل بصوت امرأة (إنت أو حدا بتعرفه): همس ثقيل وبطيء. اللعبة بتوطّي الصوت وبتضيف صدى وطبقة ثانية مرعبة. اللهجة المختارة: <b id="studioDialect"></b>.</p>
+        <div id="studioTaunts" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>👵 صوت الجدة (الأشرطة والتلفون)</h3>
+        <div id="studioGrandma" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>🔊 مؤثرات حقيقية</h3>
+        <p class="small">استورد ملفات صوت (mp3 / ogg / wav). اسم الملف بيحدد مكانه: <code dir="ltr">scream.mp3</code>، <code dir="ltr">thunder_2.ogg</code>، <code dir="ltr">rain_loop.mp3</code>… أكثر من نسخة لنفس الصوت = بتتبدّل عشوائياً.</p>
+        <div class="row">
+          <label class="filebtn">📂 استورد ملفات (بالاسم)<input type="file" id="studioImport" accept="audio/*" multiple hidden /></label>
+          <button id="studioClearSfx" class="ghost">امسح كل المؤثرات</button>
+        </div>
+        <div id="studioSfx" class="studio"></div>
+        <details class="small">
+          <summary>وين بلاقي أصوات حقيقية ببلاش؟</summary>
+          <ul>
+            <li><b>freesound.org</b>: فلتر «Creative Commons 0» (بدون شروط). ابحث: female scream, creepy laugh, barefoot steps, old door creak, thunder…</li>
+            <li><b>Sonniss — GDC Game Audio Bundle</b>: حزم مجانية ضخمة باستعمال تجاري بدون ذكر المصدر.</li>
+            <li><b>kenney.nl/assets</b> (قسم Audio): كلها CC0.</li>
+            <li><b>pixabay.com/sound-effects</b>: مجانية باستعمال تجاري (اقرأ الرخصة).</li>
+          </ul>
+          <p>قبل ما تبيع اللعبة، تأكّد من رخصة كل ملف. والأحلى: صوت ممثلة حقيقية للسعلوة والجدة بالاستوديو فوق.</p>
+        </details>
+      </div>
+      <button id="btnStudioBack">رجوع</button>
+    </section>
+
+    <section id="privacy" class="screen hidden">
+      <h2>الخصوصية</h2>
+      <div class="box">
+        <p><b>كل شي بيضل على جهازك.</b> اللعبة ما عندها سيرفر، وما بتبعت أي شي عنك لأي مكان.</p>
+        <ul>
+          <li>المايك بيقيس قديش صوتك عالي، لحظياً، وما بينحفظ.</li>
+          <li>إذا سمحت بالتقليد: مقاطع قصيرة (1–3 ثواني) بتنحفظ بمتصفحك بس، وبتنحذف تلقائياً بعد 7 أيام، أو بزر من القائمة.</li>
+          <li>مسجّل الكاسيت بيسجّل بس لما تستعمله، وبينحذف مع نهاية الليلة.</li>
+          <li>تسجيلات استوديو الأصوات (اسمك وجملك) بتضل بجهازك لحد ما تحذفها.</li>
+          <li>ذاكرة السعلوة ودفتر الجدة والإعدادات محفوظين بجهازك، وإلهم أزرار مسح.</li>
+          <li>فيديو آخر لحظات ما بيطلع من جهازك إلا إذا نزّلته. تصويت تويتش بيقرأ الشات بس بدون حساب.</li>
+          <li>ما في إعلانات ولا تتبّع ولا إحصائيات. العمر: 16+.</li>
+        </ul>
+        <p class="small">النص الكامل بملف PRIVACY.md مع اللعبة.</p>
+      </div>
+      <div class="box">
+        <h3>مصادر الأصوات</h3>
+        <p class="small">الأصوات الحقيقية بهاللعبة مأخوذة من مشاريع مفتوحة ومعدّلة (قص وتوحيد علوّ):</p>
+        <ul class="small" dir="ltr" style="text-align: left">
+          <li>SCP – Containment Breach, Regalis11 and contributors — CC BY-SA 3.0 (github.com/Regalis11/scpcb)</li>
+          <li>Q009 "morph" ambient pack, Red Eclipse — CC BY 3.0 (github.com/redeclipse/sounds)</li>
+          <li>Sonic Pi samples (freesound.org) — CC0 (github.com/sonic-pi-net/sonic-pi)</li>
+        </ul>
+        <p class="small">القائمة الكاملة ملف ملف: sounds/CREDITS.md</p>
+      </div>
+      <button id="btnPrivacyBack">رجوع</button>
+    </section>
+
+    <section id="calib" class="screen hidden">
+      <h2>معايرة المايك</h2>
+      <p id="calibText">…</p>
+      <div class="meter big"><div id="calibMeter"></div></div>
+    </section>
+
+    <section id="pause" class="screen hidden">
+      <h2>موقّفة</h2>
+      <p class="small">هي كمان مستنية…</p>
+      <div class="row">
+        <button id="btnResume" class="big">كمّل</button>
+        <button id="btnPauseSettings">⚙️ الإعدادات</button>
+        <button id="btnQuit" class="ghost">اترك الليلة (القائمة)</button>
+      </div>
+      <div id="pauseSettings"></div>
+    </section>
+
+    <section id="end" class="screen hidden">
+      <h2 id="endTitle"></h2>
+      <p id="endTaunt" class="taunt"></p>
+      <div id="endStory" class="box story"></div>
+      <div id="endAch" class="box hidden"></div>
+      <div class="box">
+        <h3>إحصائيات الليلة</h3>
+        <ul id="endStats"></ul>
+      </div>
+      <div class="box">
+        <h3>شو تعلّمت السعلوة عنك</h3>
+        <ul id="endLearned"></ul>
+      </div>
+      <div class="row">
+        <button id="btnAgain" class="big">ليلة ثانية</button>
+        <button id="btnShare">📸 شارك</button>
+        <a id="btnClip" class="hidden" download="salwa-last-moments.webm"><button>🎬 آخر لحظات (فيديو)</button></a>
+        <button id="btnMenu" class="ghost">القائمة</button>
+      </div>
+    </section>
+
+    <div id="hud" class="hidden">
+      <div id="clock">12:00</div>
+      <div class="bars">
+        <div class="bar"><span>🔦</span><div class="meter"><div id="battery"></div></div></div>
+        <div class="bar"><span>💨</span><div class="meter"><div id="stamina"></div></div></div>
+        <div class="bar" id="micBar"><span>🎤</span><div class="meter"><div id="mic"></div></div></div>
+      </div>
+      <div id="items"></div>
+      <div id="bag"></div>
+      <div id="vote" class="hidden"></div>
+      <div id="breath" class="hidden">🫁 حابس نفَسك…</div>
+      <div id="hint"></div>
+      <div id="dot"></div>
+      <div id="dbg"></div>
+    </div>
+    <div id="subs"></div>
+    <div id="caps"></div>
+    <div id="toasts"></div>
+    <div id="fade"></div>
+
+  </body>
+</html>
