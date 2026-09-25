@@ -51,6 +51,7 @@
       <div class="row">
         <button id="btnStart" class="big">ابدأ الليلة</button>
         <button id="btnBook">📖 دفتر الجدة</button>
+        <button id="btnStudio">🎙️ استوديو الأصوات</button>
         <button id="btnPrivacy" class="ghost">🔒 الخصوصية</button>
       </div>
 
@@ -113,6 +114,45 @@
       <button id="btnBookBack">رجوع</button>
     </section>
 
+    <section id="studio" class="screen hidden">
+      <h2>استوديو الأصوات</h2>
+      <p class="small">كل تسجيل بيضل على جهازك بس. الصوت الحقيقي بيحل محل الصوت المولّد والقراءة الآلية.</p>
+      <div class="box">
+        <h3>🧍 صوتك إنت — السعلوة بتناديك فيه</h3>
+        <p class="small">سجّل كل جملة بصوتك العادي (اكبس «سجّل»، احكي، واكبس «وقّف»). بتسمعها بالليل من غرف معتمة، وبتهمس اسمك وإنت مخبّى.</p>
+        <div id="studioMe" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>👁️ صوت السعلوة</h3>
+        <p class="small">سجّل الجمل بصوت امرأة (إنت أو حدا بتعرفه): همس ثقيل وبطيء. اللعبة بتوطّي الصوت وبتضيف صدى وطبقة ثانية مرعبة. اللهجة المختارة: <b id="studioDialect"></b>.</p>
+        <div id="studioTaunts" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>👵 صوت الجدة (الأشرطة والتلفون)</h3>
+        <div id="studioGrandma" class="studio"></div>
+      </div>
+      <div class="box">
+        <h3>🔊 مؤثرات حقيقية</h3>
+        <p class="small">استورد ملفات صوت (mp3 / ogg / wav). اسم الملف بيحدد مكانه: <code dir="ltr">scream.mp3</code>، <code dir="ltr">thunder_2.ogg</code>، <code dir="ltr">rain_loop.mp3</code>… أكثر من نسخة لنفس الصوت = بتتبدّل عشوائياً.</p>
+        <div class="row">
+          <label class="filebtn">📂 استورد ملفات (بالاسم)<input type="file" id="studioImport" accept="audio/*" multiple hidden /></label>
+          <button id="studioClearSfx" class="ghost">امسح كل المؤثرات</button>
+        </div>
+        <div id="studioSfx" class="studio"></div>
+        <details class="small">
+          <summary>وين بلاقي أصوات حقيقية ببلاش؟</summary>
+          <ul>
+            <li><b>freesound.org</b>: فلتر «Creative Commons 0» (بدون شروط). ابحث: female scream, creepy laugh, barefoot steps, old door creak, thunder…</li>
+            <li><b>Sonniss — GDC Game Audio Bundle</b>: حزم مجانية ضخمة باستعمال تجاري بدون ذكر المصدر.</li>
+            <li><b>kenney.nl/assets</b> (قسم Audio): كلها CC0.</li>
+            <li><b>pixabay.com/sound-effects</b>: مجانية باستعمال تجاري (اقرأ الرخصة).</li>
+          </ul>
+          <p>قبل ما تبيع اللعبة، تأكّد من رخصة كل ملف. والأحلى: صوت ممثلة حقيقية للسعلوة والجدة بالاستوديو فوق.</p>
+        </details>
+      </div>
+      <button id="btnStudioBack">رجوع</button>
+    </section>
+
     <section id="privacy" class="screen hidden">
       <h2>الخصوصية</h2>
       <div class="box">
@@ -121,6 +161,7 @@
           <li>المايك بيقيس قديش صوتك عالي، لحظياً، وما بينحفظ.</li>
           <li>إذا سمحت بالتقليد: مقاطع قصيرة (1–3 ثواني) بتنحفظ بمتصفحك بس، وبتنحذف تلقائياً بعد 7 أيام، أو بزر من القائمة.</li>
           <li>مسجّل الكاسيت بيسجّل بس لما تستعمله، وبينحذف مع نهاية الليلة.</li>
+          <li>تسجيلات استوديو الأصوات (اسمك وجملك) بتضل بجهازك لحد ما تحذفها.</li>
           <li>ذاكرة السعلوة ودفتر الجدة والإعدادات محفوظين بجهازك، وإلهم أزرار مسح.</li>
           <li>فيديو آخر لحظات ما بيطلع من جهازك إلا إذا نزّلته. تصويت تويتش بيقرأ الشات بس بدون حساب.</li>
           <li>ما في إعلانات ولا تتبّع ولا إحصائيات. العمر: 16+.</li>

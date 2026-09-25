@@ -66,6 +66,13 @@ export const TAPES = [
   },
 ];
 
+// جمل الجدة بالتلفون (الأخيرة كذبة: هي اللي بتحكي بصوت الجدة)
+export const PHONE_LINES = [
+  ['حبيبي… لا تطلع من مخبأك لما تسكت الغنّية.', "Dear… don't leave your hiding place when the singing stops."],
+  ['الملح عالعتبة يا ابني… الملح.', 'Salt on the threshold, son… salt.'],
+  ['ستّك هون… لا تخاف… تعال لعندي عالقبو.', "Grandma's here… don't be afraid… come to me in the cellar."],
+];
+
 // الأشرطة اللي لسا ما انسمعت، بالترتيب (القصة بتنكشف بالتدريج)
 export function tapesForNight(found, n = 2) {
   return TAPES.filter((t) => !found.includes(t.id)).slice(0, n);

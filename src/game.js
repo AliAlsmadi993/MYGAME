@@ -17,7 +17,8 @@ import { createPost } from './post.js';
 import { horror } from './audio/horror.js';
 import { Bag, TOOLS } from './inventory.js';
 import { Director, pickScare } from './director.js';
-import { tapesForNight } from './story/tapes.js';
+import { tapesForNight, PHONE_LINES } from './story/tapes.js';
+import { keys as soundKeys } from './audio/sounds.js';
 import { resolveEnding, ENDINGS } from './story/endings.js';
 import { noteTape, saveProgress, finishRun, recorderUnlocked } from './progress.js';
 import { Vote, ACTIONS, VOTE_SECONDS } from './audience.js';
@@ -146,8 +147,13 @@ export class Game {
       6,
     );
     if (this.sealed.size) setTimeout(() => this.ui.subtitle('في خزانة مسكّرة بمسامير… مين سكّرها؟', 'A wardrobe is nailed shut… who did that?', 4), 8000);
+    // صوتك إنت: «مين هون؟» من غرفة بعيدة أول الليلة
+    const who = this.#myVoice('who');
+    if (who) {
+      setTimeout(() => this.state === 'play' && this.#playMine(who, this.#randomRoomPos(1.5), 0.1), 9000);
+    }
     // البيت بيتذكّرك: صوتك من الليلة الماضية بيناديك من بعيد
-    const old = this.mem.attempts > 1 && this.mimic.persist && this.mimic.pick('talk');
+    const old = !who && this.mem.attempts > 1 && this.mimic.persist && this.mimic.pick('talk');
     if (old) {
       setTimeout(() => {
         if (this.state !== 'play') return;
@@ -778,14 +784,10 @@ export class Game {
       this.ui.subtitle('…هاد صوتك إنت؟', '…is that your own voice?', 4);
       setTimeout(() => this.audio.playAt('laugh', pos, 0.5), 3500);
     } else {
-      const lines = [
-        ['حبيبي… لا تطلع من مخبأك لما تسكت الغنّية.', "Dear… don't leave your hiding place when the singing stops."],
-        ['الملح عالعتبة يا ابني… الملح.', 'Salt on the threshold, son… salt.'],
-        ['ستّك هون… لا تخاف… تعال لعندي عالقبو.', "Grandma's here… don't be afraid… come to me in the cellar."],
-      ];
       // آخر جملة كذبة: هي اللي بتحكي
-      const [ar, en] = pick(this.hour >= 2 ? lines : lines.slice(0, 2));
-      this.audio.grandma(ar, pos);
+      const idx = Math.floor(Math.random() * (this.hour >= 2 ? 3 : 2));
+      const [ar, en] = PHONE_LINES[idx];
+      this.audio.grandma(ar, pos, soundKeys.grandma('phone', idx));
       this.ui.subtitle(`«${ar}»`, en, 5);
     }
   }
@@ -799,7 +801,7 @@ export class Game {
     tape.lines.forEach(([ar, en], i) =>
       setTimeout(() => {
         if (this.state !== 'play') return;
-        this.audio.grandma(ar, { x: p.x, y: 1, z: p.z });
+        this.audio.grandma(ar, { x: p.x, y: 1, z: p.z }, soundKeys.grandma(tape.id, i));
         this.ui.subtitle(`📼 «${ar}»`, en, 6);
         this.#noise({ radius: 5, precision: 2 }); // الشريط بيطلع صوت
       }, i * 6500),
@@ -896,6 +898,8 @@ export class Game {
   // بصوتها: باللغة واللهجة المختارة
   #say(t, pos) {
     const en = this.settings.voiceLang === 'en';
+    // تسجيل حقيقي للجملة (من الاستوديو) بصوتها المشوّه، وإلا قراءة آلية
+    if (!en && this.audio.voice(soundKeys.taunt(this.settings.dialect, t.id), pos)) return;
     this.audio.speak(en ? t.en : t.ar, pos, en ? 'en' : DIALECTS[this.settings.dialect]?.voice ?? 'ar');
   }
 
@@ -909,7 +913,35 @@ export class Game {
   }
 
   // ---------- التقليد ----------
-  #mimicEvent() {
+  // ---------- صوتك إنت (من الاستوديو) ----------
+  #myVoice(label) {
+    return this.audio.buffers.get(soundKeys.me(label)) ?? null;
+  }
+
+  #playMine(buf, pos, distortion) {
+    this.#caption('voice', pos);
+    this.stats.mimics++;
+    if (!this.settings.streamer) return this.mimic.playBuffer(buf, pos, distortion);
+    this.ui.toast('⚠ تسجيل من صوتك');
+    setTimeout(() => this.mimic.playBuffer(buf, pos, distortion), 1500);
+  }
+
+  // بتناديك باسمك (متل النداهة): من غرفة معتمة لتستدرجك، أو همس قريب وإنت مخبّى
+  #callName() {
+    const name = this.#myVoice('name');
+    const mon = this.monster;
+    if (!name || mon.state === 'chase' || this.audio.speaking) return false;
+    const p = this.player;
+    if (p.hidden && mon.pos.distanceTo(p.hidden.pos) < 10) {
+      const h = p.hidden.pos;
+      this.#playMine(name, { x: h.x + 0.6, y: 1.6, z: h.z + 0.6 }, 0.55);
+      return true;
+    }
+    this.#mimicEvent(['name']);
+    return true;
+  }
+
+  #mimicEvent(prefer = null) {
     const p = this.player.hidden ? this.player.hidden.spot : this.player.tile();
     const candidates = [];
     for (const r of Object.keys(ROOMS)) {
@@ -921,10 +953,15 @@ export class Game {
     const t = pick(candidates);
     if (!t || !findPath(this.monster.tile(), t)) return;
     const c = tileCenter(t.x, t.y);
+    const distortion = Math.min(1, Math.max(0, (this.hour - 2) / 2.5));
+    // جملك المسجّلة أول: بالبداية «تعال لهون/وينك؟»، ولاحقاً «ساعدني!» واسمك
+    const labels = prefer ?? (this.hour < 3 ? ['come', 'where', 'who'] : ['help', 'name', 'come', 'scream']);
+    const mine = labels.map((l) => this.#myVoice(l)).filter(Boolean);
     // إذا بتصرّخ كثير: بتقلّد صرخاتك أكثر
     const clip = this.mimic.pick(this.hour > 3 || this.mem.loudness > 0.6 || this.stats.screams > 2 ? 'scream' : 'talk');
-    const distortion = Math.min(1, Math.max(0, (this.hour - 2) / 2.5));
-    if (clip) {
+    if (mine.length) {
+      this.#playMine(pick(mine), { x: c.x, y: 1.5, z: c.z }, distortion * 0.8);
+    } else if (clip) {
       this.#playVoice(clip, { x: c.x, y: 1.5, z: c.z }, distortion);
       this.stats.mimics++;
     } else {
@@ -1125,8 +1162,10 @@ export class Game {
     this.monster.mesh.rotation.y = Math.atan2(-fw.x, -fw.z) + Math.PI;
     const t = this.player.tile();
     this.mem.lastDeath = { cause, spot: spot?.id ?? null, room: roomAt(t.x, t.y), time: this.time };
-    // بتكرر آخر كلمة قلتها
-    if (this.lastRunClip) {
+    // بتقول اسمك بصوتك، أو بتكرر آخر كلمة قلتها
+    const name = this.#myVoice('name');
+    if (name) setTimeout(() => this.#playMine(name, { x: cam.x, y: cam.y, z: cam.z }, 0.9), 1200);
+    else if (this.lastRunClip) {
       setTimeout(() => this.#playVoice(this.lastRunClip, { x: cam.x, y: cam.y, z: cam.z }, 0.9), 1200);
     }
     setTimeout(() => this.#end('death'), 2600);
@@ -1357,6 +1396,12 @@ export class Game {
     if (this.nextTaunt <= 0 && mon.state !== 'chase') {
       this.#taunt('idle');
       this.nextTaunt = 70 + Math.random() * 40;
+    }
+
+    // بتناديك باسمك من الساعة 1
+    if (hour >= 1 && this.#myVoice('name')) {
+      this.nextName = (this.nextName ?? 40 + Math.random() * 40) - dt;
+      if (this.nextName <= 0) this.nextName = this.#callName() ? 100 + Math.random() * 80 : 15;
     }
 
     // التقليد بعد الساعة 2 (أو 1:30 إذا عندها تسجيلات من ليالي سابقة)

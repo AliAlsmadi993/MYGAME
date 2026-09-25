@@ -103,3 +103,16 @@ test('key bindings can be changed and keep the fixed alternates', async () => {
   assert.equal(new Set(Object.values(KEY_ACTIONS).map((a) => a.key)).size, Object.keys(KEY_ACTIONS).length, 'no duplicate defaults');
   assert.equal(keyLabel('KeyQ'), 'Q');
 });
+
+test('sound files map to their slots by name', async () => {
+  const { slotForFile, SFX_SLOTS, MY_PROMPTS, keys } = await import('../src/audio/sounds.js');
+  assert.equal(slotForFile('scream.mp3'), 'scream');
+  assert.equal(slotForFile('Thunder_2.OGG'), 'thunder');
+  assert.equal(slotForFile('rain_loop.wav'), 'rain_loop');
+  assert.equal(slotForFile('rain-loop.wav'), 'rain_loop');
+  assert.equal(slotForFile('step_wood_3.mp3'), 'step_wood');
+  assert.equal(slotForFile('random song.mp3'), null);
+  assert.ok(Object.keys(SFX_SLOTS).length > 25);
+  assert.ok(MY_PROMPTS.name && MY_PROMPTS.come);
+  assert.equal(keys.taunt('egypt', 'first'), 'taunt:egypt:first');
+});

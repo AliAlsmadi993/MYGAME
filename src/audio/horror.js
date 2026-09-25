@@ -107,6 +107,7 @@ export const horror = {
 
   // صرخة السعلوة: صوت أنثوي عالي بيتكسّر
   scream(e, pos, vol = 1) {
+    if (e.sample?.('scream', pos, vol, { wet: 0.4 })) return;
     const t = e.now;
     const d = out(e, pos, vol * 0.9, 0.5);
     voice(e, d, t, 1.8, { pitch: [[0, 620], [0.15, 1150], [0.9, 980], [1.8, 420]], vowel: ['a', 'e', 'a'], breath: 0.5, drive: 12, vib: 9, vibDepth: 45, jitter: 60 });
@@ -115,6 +116,7 @@ export const horror = {
 
   // ضحكة بطيئة "ها… ها… ها"
   laugh(e, pos, vol = 1) {
+    if (e.sample?.('laugh', pos, vol, { wet: 0.4 })) return;
     const t = e.now;
     const d = out(e, pos, vol * 0.7, 0.6);
     const n = 5;
@@ -126,6 +128,7 @@ export const horror = {
 
   // همس بكلام غير مفهوم
   whisper(e, pos, vol = 1, dur = 2) {
+    if (e.sample?.('whisper', pos, vol, { wet: 0.3 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const d = out(e, pos, vol * 1.3, 0.3);
@@ -162,6 +165,7 @@ export const horror = {
 
   // خرخرة منخفضة لما تطارد
   growl(e, pos, vol = 1) {
+    if (e.sample?.('growl', pos, vol)) return;
     const t = e.now;
     const d = out(e, pos, vol, 0.3);
     voice(e, d, t, 1.3, { pitch: [[0, 85], [0.6, 70], [1.3, 95]], vowel: ['o', 'u'], breath: 0.9, drive: 20, vib: 23, vibDepth: 25, jitter: 30 });
@@ -169,6 +173,7 @@ export const horror = {
 
   // نفس خشن مكاني (شهيق وزفير)
   breath(e, pos, vol = 1, inhale = true) {
+    if (e.sample?.(inhale ? 'breath_in' : 'breath_out', pos, vol, { wet: 0.1 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const dur = inhale ? 1.1 : 1.4;
@@ -198,6 +203,7 @@ export const horror = {
 
   // صرير خشب
   creak(e, pos, vol = 1) {
+    if (e.sample?.('creak', pos, vol)) return;
     const ctx = e.ctx;
     const t = e.now;
     const dur = 0.6 + Math.random() * 0.9;
@@ -235,6 +241,7 @@ export const horror = {
 
   // نقطة مي بالقبو
   drip(e, pos, vol = 1) {
+    if (e.sample?.('drip', pos, vol, { wet: 0.5 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const d = out(e, pos, vol * 0.4, 0.8);
@@ -251,6 +258,10 @@ export const horror = {
 
   // رعد
   thunder(e, delay = 0.8, vol = 1) {
+    if (e.variants?.('thunder').length) {
+      setTimeout(() => e.sample('thunder', null, vol, { wet: 0.3 }), delay * 1000);
+      return;
+    }
     const ctx = e.ctx;
     const t = e.now + delay;
     const d = out(e, null, vol * 0.9, 0.5);
@@ -271,6 +282,7 @@ export const horror = {
 
   // عواء كلب بعيد
   howl(e, vol = 1) {
+    if (e.sample?.('howl', { x: (e.lastListener?.x ?? 0) + 40, y: 2, z: -30 }, vol, { wet: 0.6 })) return;
     const t = e.now;
     const d = out(e, { x: e.lastListener?.x + 40 || 80, y: 2, z: -30 }, vol * 0.5, 0.8);
     voice(e, d, t, 2.8, { pitch: [[0, 420], [0.4, 620], [2.2, 560], [2.8, 380]], vowel: ['o', 'u'], breath: 0.2, drive: 2, vib: 5, vibDepth: 10 });
@@ -278,6 +290,7 @@ export const horror = {
 
   // نغمة فزع لما تشوفك: عنقود متنافر بيعلى
   sting(e, vol = 1) {
+    if (e.sample?.('sting', null, vol, { wet: 0.3 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const d = out(e, null, vol * 0.35, 0.6);
@@ -305,6 +318,7 @@ export const horror = {
 
   // نغمة عود منخفضة ومشوّهة وقت الخطر (مقام حجاز)
   oud(e, vol = 1) {
+    if (e.sample?.('oud', null, vol * 0.6, { wet: 0.5 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const semis = [0, 1, 4, 5, 7, 8, 10];
@@ -333,6 +347,7 @@ export const horror = {
 
   // خطوات اللاعب حسب الأرضية
   step(e, surface, vol = 1) {
+    if (e.sample?.(`step_${surface}`, null, vol * 0.7, { wet: 0.05 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const d = out(e, null, vol, 0.15);

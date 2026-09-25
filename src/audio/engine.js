@@ -1,5 +1,15 @@
-// محرّك الصوت: كل الأصوات مولّدة برمجياً (بدون ملفات) ومكانية ثلاثية الأبعاد.
+// محرّك الصوت: كل صوت مكاني ثلاثي الأبعاد. إذا في تسجيل حقيقي للخانة (مستورد أو من الاستوديو)
+// بينلعب هو، وإلا منولّد الصوت برمجياً.
 import { horror, drone } from './horror.js';
+import { soundStore } from './store.js';
+import { slotForFile } from './sounds.js';
+
+// أصوات اللعبة ← خانة التسجيلات الحقيقية
+const SLOT = {
+  shriek: 'scream', laugh: 'laugh', whisper: 'whisper', growl: 'growl', creak: 'creak', drip: 'drip', mstep: 'monster_step',
+  bell: 'bell', chime: 'chime', knock: 'knock', jingle: 'jingle', pant: 'pant', grab: 'grab', slam: 'slam', toys: 'toys',
+  ring: 'ring', teleport: 'teleport', match: 'match', gasp: 'gasp', splash: 'splash', glass: 'glass', unlock: 'unlock',
+};
 
 export class AudioEngine {
   constructor() {
@@ -9,6 +19,116 @@ export class AudioEngine {
     this.masterLevel = 0.9;
     this.voiceLevel = 1; // صوت السعلوة وتسجيلات اللاعب
     this.onSound = null; // (kind, pos) لترجمة الأصوات
+    this.buffers = new Map(); // التسجيلات الحقيقية: id ← AudioBuffer
+  }
+
+  // ---------- التسجيلات الحقيقية ----------
+  async loadSounds() {
+    this.buffers = new Map();
+    for (const r of await soundStore.all()) {
+      try {
+        this.buffers.set(r.id, await this.#decode(r));
+      } catch {
+        /* ملف تالف */
+      }
+    }
+    // حزمة أصوات جنب اللعبة لما تكون على سيرفر: sounds/pack.json = ["scream.mp3", ...]
+    try {
+      const list = await (await fetch('sounds/pack.json')).json();
+      for (const f of list) {
+        const slot = slotForFile(f);
+        if (!slot) continue;
+        const data = await (await fetch(`sounds/${f}`)).arrayBuffer();
+        this.buffers.set(`sfx:${slot}:pack:${f}`, await this.ctx.decodeAudioData(data));
+      }
+    } catch {
+      /* ما في حزمة */
+    }
+  }
+
+  async #decode(r) {
+    if (r.kind === 'pcm') {
+      const b = this.ctx.createBuffer(1, r.data.length, r.sampleRate);
+      b.copyToChannel(r.data instanceof Float32Array ? r.data : new Float32Array(r.data), 0);
+      return b;
+    }
+    return this.ctx.decodeAudioData(r.data.slice(0));
+  }
+
+  // تسجيل جديد من الاستوديو أو ملف مستورد: بينحفظ وبيصير جاهز فوراً
+  async addSound(rec) {
+    await soundStore.put(rec);
+    this.buffers.set(rec.id, await this.#decode(rec));
+  }
+
+  async removeSound(id) {
+    await soundStore.del(id);
+    this.buffers.delete(id);
+  }
+
+  variants(slot) {
+    const out = [];
+    for (const [id, b] of this.buffers) if (id.startsWith(`sfx:${slot}:`)) out.push(b);
+    return out;
+  }
+
+  // بيلعب تسجيل حقيقي للخانة إذا موجود. بيرجع { src, gain } أو null
+  sample(slot, pos, vol = 1, { loop = false, rate = 1, dest = null, wet = 0.2 } = {}) {
+    if (!this.ctx) return null;
+    const list = this.variants(slot);
+    if (!list.length) return null;
+    const src = this.ctx.createBufferSource();
+    src.buffer = list[Math.floor(Math.random() * list.length)];
+    src.loop = loop;
+    src.playbackRate.value = rate * (loop ? 1 : 0.95 + Math.random() * 0.1);
+    const g = this.ctx.createGain();
+    g.gain.value = vol;
+    src.connect(g).connect(dest ?? (pos ? this.panner(pos) : this.master));
+    if (wet) {
+      const send = this.ctx.createGain();
+      send.gain.value = wet;
+      g.connect(send).connect(this.reverb);
+    }
+    src.start();
+    return { src, gain: g };
+  }
+
+  // جملة مسجّلة بصوت حقيقي. monster: أوطى وأثقل مع صدى وطبقة ثانية مشوّهة (صوت السعلوة)
+  // بيرجع مدتها بالثواني، أو 0 إذا ما في تسجيل
+  voice(id, pos, { monster = true, vol = 1 } = {}) {
+    const buf = this.buffers.get(id);
+    if (!buf || !this.ctx) return 0;
+    const ctx = this.ctx;
+    const out = pos ? this.panner(pos) : this.master;
+    const rate = monster ? 0.86 : 1;
+    const main = ctx.createBufferSource();
+    main.buffer = buf;
+    main.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = 1.6 * vol * this.voiceLevel;
+    const tone = ctx.createBiquadFilter();
+    tone.type = monster ? 'lowshelf' : 'highpass';
+    tone.frequency.value = monster ? 300 : 120;
+    tone.gain.value = monster ? 6 : 0;
+    main.connect(tone).connect(g).connect(out);
+    const send = ctx.createGain();
+    send.gain.value = monster ? 0.5 : 0.15;
+    g.connect(send).connect(this.reverb);
+    if (monster) {
+      // طبقة ثانية أوطى بكثير ومتأخرة شوي: كأن في شي ثاني بيحكي معها
+      const low = ctx.createBufferSource();
+      low.buffer = buf;
+      low.playbackRate.value = 0.62;
+      const lg = ctx.createGain();
+      lg.gain.value = 0.35 * vol * this.voiceLevel;
+      low.connect(lg).connect(out);
+      low.start(this.now + 0.04);
+      horror.whisper(this, pos, 0.35, buf.duration / rate);
+    }
+    this.speaking = true;
+    main.onended = () => (this.speaking = false);
+    main.start();
+    return buf.duration / rate;
   }
 
   // مستويات الصوت من الإعدادات
@@ -21,7 +141,7 @@ export class AudioEngine {
     this.amb.gain.setTargetAtTime(volAmb, this.now, 0.05);
   }
 
-  start() {
+  async start() {
     if (this.ctx) return this.ctx.resume();
     const ctx = (this.ctx = new (window.AudioContext || window.webkitAudioContext)());
     this.master = ctx.createGain();
@@ -41,6 +161,7 @@ export class AudioEngine {
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.#impulse(2.6, 2.5);
     this.reverb.connect(this.master);
+    await this.loadSounds();
     this.#ambience();
     this.#heart();
     this.drone = drone(this);
@@ -99,6 +220,10 @@ export class AudioEngine {
   // ريح ومطر بالخلفية
   #ambience() {
     const ctx = this.ctx;
+    // تسجيلات حقيقية للمطر والريح إذا موجودة
+    const realRain = this.sample('rain_loop', null, 0.5, { loop: true, dest: this.amb, wet: 0 });
+    const realWind = this.sample('wind_loop', null, 0.6, { loop: true, dest: this.amb, wet: 0 });
+    if (realRain && realWind) return;
     const wind = this.#noiseSrc();
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
@@ -111,14 +236,14 @@ export class AudioEngine {
     lfo.connect(lfoGain).connect(bp.frequency);
     const wg = ctx.createGain();
     wg.gain.value = 0.12;
-    wind.connect(bp).connect(wg).connect(this.amb);
+    if (!realWind) wind.connect(bp).connect(wg).connect(this.amb);
     const rain = this.#noiseSrc();
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 3000;
     const rg = ctx.createGain();
     rg.gain.value = 0.025;
-    rain.connect(hp).connect(rg).connect(this.amb);
+    if (!realRain) rain.connect(hp).connect(rg).connect(this.amb);
     wind.start();
     rain.start();
     lfo.start();
@@ -130,7 +255,7 @@ export class AudioEngine {
     const beat = () => {
       if (!this.ctx) return;
       const f = this.fear;
-      if (f > 0.15) {
+      if (f > 0.15 && !this.sample('heartbeat', null, 0.6 * f, { wet: 0 })) {
         this.#thump(this.now, 0.25 * f, 55);
         this.#thump(this.now + 0.18, 0.16 * f, 48);
       }
@@ -197,6 +322,8 @@ export class AudioEngine {
   playAt(kind, pos, vol = 1) {
     if (!this.ctx) return;
     this.onSound?.(kind, pos);
+    const loud = kind === 'shriek' || kind === 'grab' ? this.screamScale : 1;
+    if (SLOT[kind] && this.sample(SLOT[kind], pos, vol * loud, { wet: kind === 'mstep' ? 0.1 : 0.25 })) return;
     const h = { shriek: 'scream', laugh: 'laugh', whisper: 'whisper', growl: 'growl', creak: 'creak', drip: 'drip' }[kind];
     if (kind === 'shriek') vol *= this.screamScale;
     if (h) return horror[h](this, pos, vol);
@@ -411,10 +538,14 @@ export class AudioEngine {
     const notes = [0, 3, 5, 3, 0, -2, 0, 3, 7, 5, 3, 2, 0];
     let i = 0;
     let alive = true;
+    // غنّيتها المسجّلة (إذا موجودة) بتتكرر بدل الهمهمة المولّدة
+    const real = this.sample('lullaby', null, 1, { loop: true, dest: g, wet: 0.3 });
     g.stop = () => {
       alive = false;
+      real?.src.stop();
       g.disconnect();
     };
+    if (real) return g;
     const sing = () => {
       if (!alive) return;
       horror.hum(this, g, 220 * Math.pow(2, notes[i % notes.length] / 12), 0.9);
@@ -432,6 +563,18 @@ export class AudioEngine {
     const g = ctx.createGain();
     g.gain.value = 0.35;
     g.connect(p);
+    const real = this.sample('radio_loop', null, 2, { loop: true, dest: g });
+    if (real) {
+      let on = true;
+      const stopReal = () => {
+        if (!on) return;
+        on = false;
+        g.gain.setTargetAtTime(0, this.now, 0.05);
+        setTimeout(() => real.src.stop(), 300);
+      };
+      setTimeout(stopReal, seconds * 1000);
+      return stopReal;
+    }
     const st = this.#noiseSrc();
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
@@ -475,7 +618,8 @@ export class AudioEngine {
   }
 
   // صوت الجدة بالأشرطة والتلفون: قراءة آلية أهدى، مع خشخشة شريط
-  grandma(text, pos) {
+  grandma(text, pos, id = null) {
+    if (id && this.voice(id, pos, { monster: false, vol: 0.8 })) return;
     if (pos) this.playAt('whisper', pos, 0.3);
     this.speak(text, null, 'ar', { pitch: 0.7, rate: 0.85, volume: 0.8 });
   }

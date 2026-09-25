@@ -8,13 +8,17 @@ import { DIFFICULTIES, NIGHTS, nightConfig, DEMO } from './config.js';
 import { Game } from './game.js';
 import { loadProgress, clearProgress, emptyProgress, ACHIEVEMENTS, nightTwoUnlocked } from './progress.js';
 import { loadSettings, saveSettings } from './settings.js';
-import { TAPES } from './story/tapes.js';
+import { TAPES, PHONE_LINES } from './story/tapes.js';
 import { ENDINGS } from './story/endings.js';
 import { TOOLS } from './inventory.js';
 import { ITEMS } from './world/map.js';
 import { Clipper } from './clipper.js';
 import { createMenuScene } from './menuScene.js';
 import { KEY_ACTIONS, buildKeymap, keyLabel } from './keymap.js';
+import { soundStore } from './audio/store.js';
+import { SFX_SLOTS, MY_PROMPTS, slotForFile, keys as SK } from './audio/sounds.js';
+import { TAUNTS } from './monster/taunts.js';
+import { DIALECT_TAUNTS, DIALECTS } from './monster/dialects.js';
 import { TwitchChat, ACTIONS } from './audience.js';
 
 const $ = (id) => document.getElementById(id);
@@ -58,7 +62,7 @@ const keys = {};
 
 // ---------- الواجهة ----------
 const show = (id) => {
-  for (const s of ['warn', 'menu', 'book', 'privacy', 'calib', 'pause', 'end']) $(s).classList.toggle('hidden', s !== id);
+  for (const s of ['warn', 'menu', 'book', 'studio', 'privacy', 'calib', 'pause', 'end']) $(s).classList.toggle('hidden', s !== id);
   $('hud').classList.toggle('hidden', id !== null);
 };
 
@@ -376,6 +380,15 @@ $('btnBook').onclick = () => {
 };
 $('btnBookBack').onclick = () => show('menu');
 $('btnPrivacy').onclick = () => show('privacy');
+$('btnStudio').onclick = async () => {
+  await audio.start();
+  renderStudio();
+  show('studio');
+};
+$('btnStudioBack').onclick = () => {
+  if (studioRec) mic.recordStop();
+  show('menu');
+};
 $('btnPrivacyBack').onclick = () => show('menu');
 $('btnShare').onclick = () => lastEnd && shareCard(lastEnd);
 $('btnWipeBook').onclick = () => {
@@ -388,6 +401,11 @@ if (params.has('nomic')) $('optMic').checked = false;
 
 $('btnDelClips').onclick = async () => {
   await mimic.clear();
+  // وتسجيلات الاستوديو (صوتك وأصوات الشخصيات)، المؤثرات بتضل
+  for (const prefix of ['me:', 'taunt:', 'grandma:']) {
+    await soundStore.delPrefix(prefix);
+    for (const id of [...audio.buffers.keys()]) if (id.startsWith(prefix)) audio.buffers.delete(id);
+  }
   updateMemInfo();
   ui.subtitle('انحذفت كل تسجيلات صوتك.', 'All voice recordings deleted.', 3);
 };
@@ -469,6 +487,138 @@ function resetScene() {
   game = null;
   window.speechSynthesis?.cancel();
 }
+
+// ---------- استوديو الأصوات ----------
+// تنظيف التسجيل: قص الصمت بالأول والآخر وتوحيد العلوّ
+function tidy(samples, rate) {
+  let peak = 0;
+  for (const v of samples) peak = Math.max(peak, Math.abs(v));
+  if (peak < 0.01) return null;
+  const thr = peak * 0.06;
+  let a = samples.findIndex((v) => Math.abs(v) > thr);
+  let b = samples.length - 1;
+  while (b > a && Math.abs(samples[b]) <= thr) b--;
+  a = Math.max(0, a - Math.floor(rate * 0.08));
+  b = Math.min(samples.length, b + Math.floor(rate * 0.25));
+  const out = samples.slice(a, b);
+  const k = 0.9 / peak;
+  for (let i = 0; i < out.length; i++) out[i] *= k;
+  return out;
+}
+
+let studioRec = null;
+const studioCtx = { mem: { attempts: 10 }, lastDeathLabel: 'الخزانة' };
+function studioLine(container, id, text, mode) {
+  const row = document.createElement('div');
+  row.className = 'line';
+  const has = audio.buffers.has(id);
+  row.innerHTML = `<span class="txt"></span><span class="${has ? 'ok' : 'small'}">${has ? '✓ مسجّل' : 'مولّد'}</span>`;
+  row.firstChild.textContent = text;
+  const btn = (label, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = fn;
+    row.append(b);
+    return b;
+  };
+  const rec = btn(studioRec === id ? '⏹ وقّف' : '🎙️ سجّل', async () => {
+    if (studioRec === id) return mic.recordStop();
+    if (studioRec) return;
+    try {
+      if (!mic.enabled) await mic.enable(settings.micDevice).catch(() => mic.enable());
+    } catch {
+      return ui.subtitle('ما قدرنا نشغّل المايك.', 'Microphone unavailable.', 3);
+    }
+    studioRec = id;
+    renderStudio();
+    const clip = await mic.recordStart(8);
+    studioRec = null;
+    const data = clip && tidy(clip.samples, clip.sampleRate);
+    if (!data) ui.subtitle('ما سمعنا شي… قرّب من المايك وجرّب كمان مرة.', 'Nothing heard, try again.', 3);
+    else await audio.addSound({ id, kind: 'pcm', data, sampleRate: clip.sampleRate });
+    renderStudio();
+  }, studioRec === id ? 'rec' : '');
+  void rec;
+  if (has) {
+    btn('▶', () => audio.voice(id, null, { monster: mode === 'monster' }));
+    btn('✖', async () => {
+      await audio.removeSound(id);
+      renderStudio();
+    }, 'ghost');
+  }
+  container.append(row);
+}
+
+function renderStudio() {
+  const d = settings.dialect;
+  $('studioDialect').textContent = DIALECTS[d]?.ar ?? d;
+  for (const id of ['studioMe', 'studioTaunts', 'studioGrandma', 'studioSfx']) $(id).innerHTML = '';
+  for (const [label, p] of Object.entries(MY_PROMPTS)) studioLine($('studioMe'), SK.me(label), `${p.ar} — ${p.say}`, 'me');
+  for (const t of TAUNTS) {
+    const v = DIALECT_TAUNTS[d]?.[t.id] ?? t.ar;
+    studioLine($('studioTaunts'), SK.taunt(d, t.id), typeof v === 'function' ? v(studioCtx) : v, 'monster');
+  }
+  for (const tape of TAPES) tape.lines.forEach(([ar], i) => studioLine($('studioGrandma'), SK.grandma(tape.id, i), `${tape.title.ar}: ${ar}`, 'grandma'));
+  PHONE_LINES.forEach(([ar], i) => studioLine($('studioGrandma'), SK.grandma('phone', i), `التلفون: ${ar}`, 'grandma'));
+  for (const [slot, ar] of Object.entries(SFX_SLOTS)) {
+    const n = audio.variants(slot).length;
+    const row = document.createElement('div');
+    row.className = 'line';
+    row.innerHTML = `<span class="txt">${esc(ar)} <code dir="ltr">${slot}</code></span><span class="${n ? 'ok' : 'small'}">${n ? `✓ ${n}` : 'مولّد'}</span>`;
+    const lab = document.createElement('label');
+    lab.className = 'filebtn';
+    lab.style.padding = '3px 8px';
+    lab.textContent = '📂';
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/*';
+    input.multiple = true;
+    input.hidden = true;
+    input.onchange = () => importSounds(input.files, slot);
+    lab.append(input);
+    row.append(lab);
+    if (n) {
+      const del = document.createElement('button');
+      del.className = 'ghost';
+      del.textContent = '✖';
+      del.onclick = async () => {
+        await soundStore.delPrefix(`sfx:${slot}:`);
+        for (const id of [...audio.buffers.keys()]) if (id.startsWith(`sfx:${slot}:`)) audio.buffers.delete(id);
+        renderStudio();
+      };
+      row.append(del);
+    }
+    $('studioSfx').append(row);
+  }
+}
+
+// استيراد ملفات صوت: بالاسم، أو كلها لخانة وحدة
+async function importSounds(files, forceSlot = null) {
+  const skipped = [];
+  let ok = 0;
+  for (const [i, f] of [...files].entries()) {
+    const slot = forceSlot ?? slotForFile(f.name);
+    if (!slot) {
+      skipped.push(f.name);
+      continue;
+    }
+    try {
+      await audio.addSound({ id: SK.sfx(slot, `${Date.now()}_${i}`), kind: 'file', data: await f.arrayBuffer(), name: f.name });
+      ok++;
+    } catch {
+      skipped.push(f.name);
+    }
+  }
+  renderStudio();
+  ui.subtitle(`انضاف ${ok} صوت${skipped.length ? ` · ما عرفنا: ${skipped.slice(0, 4).join('، ')}` : ''}`, '', 5);
+}
+$('studioImport').onchange = () => importSounds($('studioImport').files);
+$('studioClearSfx').onclick = async () => {
+  await soundStore.delPrefix('sfx:');
+  for (const id of [...audio.buffers.keys()]) if (id.startsWith('sfx:')) audio.buffers.delete(id);
+  renderStudio();
+};
 
 // ---------- الإدخال ----------
 // بالمتصفحات الجديدة بترجع Promise بيرفض إذا ما في كبسة من اللاعب: منتجاهله

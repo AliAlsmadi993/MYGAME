@@ -45,6 +45,15 @@ export class Mic {
     return new Promise((resolve) => (this.#manual = { chunks: [], need: seconds, resolve }));
   }
 
+  // استوديو الأصوات: سجّل لحد ما يوقّف (أو max ثواني)
+  recordStart(max = 8) {
+    return this.recordNext(max);
+  }
+
+  recordStop() {
+    if (this.#manual) this.#manual.need = 0;
+  }
+
   async enable(deviceId = '') {
     const ctx = this.engine.ctx;
     const audio = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };

@@ -70,10 +70,17 @@ export class Mimic {
 
   // تشغيل المقطع من مكان معيّن بعد تشويهه. distortion من 0 (شبه طبيعي) إلى 1 (مرعب)
   play(clip, pos, distortion = 0) {
-    const e = this.engine;
-    const ctx = e.ctx;
+    const ctx = this.engine.ctx;
     const buf = ctx.createBuffer(1, clip.samples.length, clip.sampleRate);
     buf.copyToChannel(clip.samples, 0);
+    return this.playBuffer(buf, pos, distortion);
+  }
+
+  // نفس التشويه لتسجيل جاهز (مثلاً جمل صوتك من الاستوديو)
+  playBuffer(buf, pos, distortion = 0) {
+    const e = this.engine;
+    const ctx = e.ctx;
+    const clip = { samples: buf.getChannelData(0) };
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = 0.94 - distortion * 0.18; // أخفض وأبطأ مع الوقت
