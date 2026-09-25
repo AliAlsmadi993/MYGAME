@@ -7,9 +7,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
-    "build:play": "vite build --mode single && cp dist-single/index.html play.html",
+    "build:play": "node scripts/embed-sounds.mjs && vite build --mode single && cp dist-single/index.html play.html",
     "build:demo": "vite build --mode demo",
-    "build:desktop": "vite build --mode single && mkdir -p desktop/app && cp dist-single/index.html desktop/app/index.html"
+    "build:desktop": "node scripts/embed-sounds.mjs && vite build --mode single && mkdir -p desktop/app && cp dist-single/index.html desktop/app/index.html"
   },
   "repository": {
     "type": "git",

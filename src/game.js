@@ -1582,6 +1582,12 @@ export class Game {
       const t = roomTiles('u')[5];
       horror.drip(A, { ...tileCenter(t.x, t.y), y: 2.8 });
     }
+    // أصوات بعيدة حقيقية بالبيت (إذا في تسجيلات)
+    this.nextAmbientSfx = (this.nextAmbientSfx ?? rand(15, 30)) - dt;
+    if (this.nextAmbientSfx <= 0) {
+      this.nextAmbientSfx = rand(25, 60);
+      A.sample('ambient', this.#randomRoomPos(2), 0.35, { wet: 0.5 });
+    }
     this.nextHowl -= dt;
     if (this.nextHowl <= 0) {
       this.nextHowl = rand(80, 150);

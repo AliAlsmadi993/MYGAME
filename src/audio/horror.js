@@ -348,6 +348,8 @@ export const horror = {
   // خطوات اللاعب حسب الأرضية
   step(e, surface, vol = 1) {
     if (e.sample?.(`step_${surface}`, null, vol * 0.7, { wet: 0.05 })) return;
+    // خشب بدون تسجيل خاص: نفس خطوات الحجر بس أوطى
+    if (surface === 'wood' && e.sample?.('step_stone', null, vol * 0.6, { wet: 0.05, rate: 0.82 })) return;
     const ctx = e.ctx;
     const t = e.now;
     const d = out(e, null, vol, 0.15);

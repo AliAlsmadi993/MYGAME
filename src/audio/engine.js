@@ -32,15 +32,34 @@ export class AudioEngine {
         /* ملف تالف */
       }
     }
-    // حزمة أصوات جنب اللعبة لما تكون على سيرفر: sounds/pack.json = ["scream.mp3", ...]
+    await this.#loadPack();
+  }
+
+  // حزمة الأصوات الحقيقية اللي مع اللعبة (public/sounds، مصادرها بـ CREDITS.md).
+  // على سيرفر: sounds/pack.json. بنسخة الملف الواحد (play.html) مدموجة جوّا الملف.
+  async #loadPack() {
+    const add = async (f, data) => {
+      const slot = slotForFile(f);
+      if (!slot) return;
+      try {
+        this.buffers.set(`sfx:${slot}:pack:${f}`, await this.ctx.decodeAudioData(data));
+      } catch {
+        /* ملف تالف */
+      }
+    };
+    /* global __SINGLE__ */
+    if (typeof __SINGLE__ !== 'undefined' && __SINGLE__) {
+      const mods = import.meta.glob('./embedded.gen.js');
+      const load = mods['./embedded.gen.js'];
+      if (!load) return;
+      const { SOUNDS } = await load();
+      const bin = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+      await Promise.all(Object.entries(SOUNDS).map(([f, b64]) => add(f, bin(b64))));
+      return;
+    }
     try {
       const list = await (await fetch('sounds/pack.json')).json();
-      for (const f of list) {
-        const slot = slotForFile(f);
-        if (!slot) continue;
-        const data = await (await fetch(`sounds/${f}`)).arrayBuffer();
-        this.buffers.set(`sfx:${slot}:pack:${f}`, await this.ctx.decodeAudioData(data));
-      }
+      await Promise.all(list.map(async (f) => add(f, await (await fetch(`sounds/${f}`)).arrayBuffer())));
     } catch {
       /* ما في حزمة */
     }

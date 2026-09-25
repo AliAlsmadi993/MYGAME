@@ -5,3 +5,4 @@ dist-demo
 desktop/app
 desktop/node_modules
 desktop/out
+src/audio/embedded.gen.js
