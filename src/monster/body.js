@@ -144,7 +144,7 @@ export function buildBody() {
 }
 
 // الحركة: مشي متقطّع، راس بيميل، شعر بيتمرجح، وبالمطاردة بتميل لقدّام وإيديها ممدودة
-export function animateBody(body, t, { moving, chase, searching }) {
+export function animateBody(body, t, { moving, chase, searching, covering = false }) {
   const { head, arms, strands, robe } = body.userData;
   const twitch = Math.sin(t * 13) > 0.96 ? 0.45 : 0;
   head.rotation.z = Math.sin(t * 0.7) * 0.3 + twitch;
@@ -157,6 +157,15 @@ export function animateBody(body, t, { moving, chase, searching }) {
     a.shoulder.rotation.x = reach + swing * 0.25 * a.side;
     a.shoulder.rotation.z = a.side * (chase ? 0.25 : 0.08);
     a.elbow.rotation.x = chase ? -0.2 + Math.sin(t * 17 + a.side) * 0.08 : -0.15;
+  }
+  // الضو بوجهها: إيديها الطوال عوجهها
+  if (covering) {
+    for (const a of arms) {
+      a.shoulder.rotation.x = -2.5;
+      a.shoulder.rotation.z = -a.side * 0.5;
+      a.elbow.rotation.x = -1.3;
+    }
+    head.rotation.x = 0.5;
   }
   body.rotation.x = chase ? -0.12 : 0; // بتميل لقدّام
   robe.scale.set(1, 1 + Math.sin(t * 1.3) * 0.01, 1);

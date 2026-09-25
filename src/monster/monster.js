@@ -1,7 +1,7 @@
 // السعلوة: حالات السلوك، الحواس (سمع/بصر/شم)، والحركة على الشبكة.
 import * as THREE from 'three';
 import {
-  TILE, HIDE_SPOTS, HIDE_KINDS, MONSTER_LAIR, ROOMS, findPath, lineOfSight, tileCenter, worldToTile, roomAt, roomTiles, isWalkable,
+  TILE, WALL_H, HIDE_SPOTS, HIDE_KINDS, MONSTER_LAIR, ROOMS, findPath, lineOfSight, tileCenter, worldToTile, roomAt, roomTiles, isWalkable,
 } from '../world/map.js';
 import { hideSearchOrder, hottestRoute, favoriteHide } from './memory.js';
 import { buildBody, animateBody } from './body.js';
@@ -12,7 +12,12 @@ export class Monster {
     this.cfg = cfg;
     this.mem = mem;
     this.mesh = buildBody();
+    this.mesh.rotation.order = 'YXZ'; // لف ثم ميلان (للزحف والمشي عالسقف)
     scene.add(this.mesh);
+    this.pose = 'walk'; // walk | crawl | ceiling
+    this.covering = 0; // بتغطي وجهها من الضو
+    this.lurking = null; // المخبأ اللي مستنيتك جوّاه
+    this.onDrop = null; // نزلت من السقف
     this.pos = new THREE.Vector3();
     this.facing = new THREE.Vector3(0, 0, 1);
     this.state = 'wander';
@@ -46,6 +51,11 @@ export class Monster {
   }
 
   #set(state, extra = {}) {
+    if (state !== 'wander' && this.pose !== 'walk') {
+      if (this.pose === 'ceiling') this.onDrop?.(this.pos.clone());
+      this.pose = 'walk';
+    }
+    if (state !== 'lurk') this.#leaveLurk();
     if (this.state !== state) this.onState?.(state, this.state);
     this.state = state;
     this.timer = 0;
@@ -75,6 +85,7 @@ export class Monster {
   // السمع: noise = { x, z, radius, precision, kind }
   hear(noise, player) {
     if (this.state === 'retreat' || this.state === 'chase') return false;
+    if (this.lurking && Math.hypot(noise.x - this.pos.x, noise.z - this.pos.z) > noise.radius * this.cfg.hearing) return false;
     const d = Math.hypot(noise.x - this.pos.x, noise.z - this.pos.z);
     let radius = noise.radius * this.cfg.hearing;
     if (!lineOfSight(this.pos.x, this.pos.z, noise.x, noise.z, this.closed)) radius *= 0.6;
@@ -95,7 +106,7 @@ export class Monster {
 
   // البصر
   canSee(player) {
-    if (player.hidden) return false;
+    if (player.hidden || this.covering > 0 || this.lurking) return false;
     const dx = player.pos.x - this.pos.x;
     const dz = player.pos.z - this.pos.z;
     const d = Math.hypot(dx, dz);
@@ -111,7 +122,43 @@ export class Monster {
       const dot = (dx * this.facing.x + dz * this.facing.z) / d;
       if (dot < 0.35) return false;
     }
-    return lineOfSight(this.pos.x, this.pos.z, player.pos.x, player.pos.z, this.closed);
+    // لما تميل من ورا زاوية، راسك ممكن يبيّن
+    const h = player.head ?? player.pos;
+    return lineOfSight(this.pos.x, this.pos.z, player.pos.x, player.pos.z, this.closed) || lineOfSight(this.pos.x, this.pos.z, h.x, h.z, this.closed);
+  }
+
+  // ضو الكشاف بوجهها: بتوقف وبتغطي وجهها ثانية، وبعدها بتعرف مكانك بالضبط
+  dazzle(target) {
+    if (this.state === 'retreat' || this.covering > 0 || this.lurking) return false;
+    this.covering = 1.3;
+    this.pause = 1.3;
+    this.lastSeen = target.clone();
+    this.investigateAt = { x: target.x, z: target.z };
+    if (this.state !== 'chase') {
+      this.#set('investigate', { rush: true });
+      this.#goTo(worldToTile(target.x, target.z));
+    }
+    this.pose = 'walk';
+    return true;
+  }
+
+  // بتستناك جوّا مخبأك المفضّل
+  lurkIn(spot) {
+    this.#set('lurk', { lurkSpot: spot, waitFor: 40 });
+    if (!this.#goTo(spot)) this.#set('wander');
+  }
+
+  #leaveLurk() {
+    if (!this.lurking) return;
+    const spot = this.lurking;
+    this.lurking = null;
+    this.mesh.visible = true;
+    const exit = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => ({ x: spot.x + dx, y: spot.y + dy })).find((t) => isWalkable(t.x, t.y));
+    if (exit) {
+      const c = tileCenter(exit.x, exit.y);
+      this.pos.set(c.x, 0, c.z);
+    }
+    this.onOpen?.(spot, false);
   }
 
   // كمين عند مكان معيّن (طريق الهروب المفضّل أو مكان الاستدراج)
@@ -151,6 +198,7 @@ export class Monster {
     this.timer += dt;
     this.singBoost = Math.max(0, (this.singBoost ?? 0) - dt);
     this.hour = ctx.hour;
+    this.covering = Math.max(0, this.covering - dt);
     const sees = this.canSee(player);
 
     if (sees && this.state !== 'retreat') {
@@ -199,6 +247,17 @@ export class Monster {
           this.#goTo(worldToTile(this.lastSeen.x, this.lastSeen.z));
         }
         break;
+      case 'lurk':
+        if (!this.lurking && !this.path?.length) {
+          // وصلت جنبه: بتفوت جوّا وبتختفي
+          this.lurking = this.lurkSpot;
+          const c = tileCenter(this.lurkSpot.x, this.lurkSpot.y);
+          this.pos.set(c.x, 0, c.z);
+          this.mesh.visible = false;
+          this.timer = 0;
+        }
+        if (this.lurking && this.timer > this.waitFor) this.#set('wander');
+        break;
       case 'ambush':
       case 'retreat':
         if (!this.path?.length) {
@@ -228,6 +287,13 @@ export class Monster {
       this.ambushAt(route, 18);
       return;
     }
+    // بتتخبّى جوّا مخبأك المفضّل وبتستناك
+    const fav = favoriteHide(this.mem);
+    const favSpot = fav && this.spots.find((s) => s.id === fav);
+    if (favSpot && (this.mem.hideCounts[fav] || 0) > 2 && Math.random() < 0.1 * this.cfg.adapt) {
+      this.lurkIn(favSpot);
+      return;
+    }
     let room;
     if (Math.random() < nearChance) room = roomAt(pt.x, pt.y) || 'c';
     else {
@@ -239,6 +305,9 @@ export class Monster {
     const tiles = roomTiles(room);
     const target = tiles[Math.floor(Math.random() * tiles.length)];
     if (!target || !this.#goTo(target)) this.path = null;
+    // أحياناً بتزحف، وأحياناً بتمشي عالسقف (بس بغرف إلها سقف)
+    const r = Math.random();
+    this.pose = r < 0.1 && ctx.hour >= 1 && target && !ROOMS[room]?.openSky ? 'ceiling' : r < 0.25 ? 'crawl' : 'walk';
     // وقفة غريبة أحياناً
     this.pause = Math.random() < 0.3 ? 0.6 + Math.random() : 0;
   }
@@ -353,7 +422,7 @@ export class Monster {
     this.stepAcc += step;
     if (this.stepAcc > (this.state === 'chase' ? 1.8 : 1.3)) {
       this.stepAcc = 0;
-      this.audio.playAt('mstep', { x: this.pos.x, y: 0.2, z: this.pos.z }, this.state === 'chase' ? 1.4 : 0.8);
+      this.audio.playAt('mstep', { x: this.pos.x, y: this.pose === 'ceiling' ? WALL_H : 0.2, z: this.pos.z }, this.state === 'chase' ? 1.4 : 0.8);
     }
   }
 
@@ -362,9 +431,21 @@ export class Monster {
     m.position.set(this.pos.x, 0, this.pos.z);
     m.rotation.y = Math.atan2(this.facing.x, this.facing.z) + Math.PI;
     const moving = !!(this.path?.length || this.direct) && !(this.pause > 0);
-    animateBody(m, this.t, { moving, chase: this.state === 'chase', searching: this.state === 'search' || (this.state === 'ambush' && this.waiting) });
+    animateBody(m, this.t, { moving, chase: this.state === 'chase', searching: this.state === 'search' || (this.state === 'ambush' && this.waiting), covering: this.covering > 0 });
+    // الزحف: جسمها ممدود عالأرض؛ السقف: نفس الشي بس مقلوبة ولازقة فوق
+    m.rotation.z = 0;
+    const mt = this.tile();
+    const pose = this.pose === 'ceiling' && ROOMS[roomAt(mt.x, mt.y)]?.openSky ? 'walk' : this.pose;
+    if (pose === 'crawl') {
+      m.rotation.x = -1.35;
+      m.position.y = 0.3;
+    } else if (pose === 'ceiling') {
+      m.rotation.x = -1.35;
+      m.rotation.z = Math.PI;
+      m.position.y = WALL_H - 0.3;
+    }
     if (this.panner) {
-      this.audio.movePanner(this.panner, { x: this.pos.x, y: 2.2, z: this.pos.z });
+      this.audio.movePanner(this.panner, { x: this.pos.x, y: this.pose === 'ceiling' ? WALL_H : 2.2, z: this.pos.z });
       // بتغني وهي تتجوّل، وبتسكت لما تصيد
       const singing = this.state === 'wander' || this.state === 'retreat' || this.singBoost > 0;
       this.song.gain.setTargetAtTime(singing ? 0.8 : 0.05, this.audio.now, 0.4);

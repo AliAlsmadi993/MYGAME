@@ -29,6 +29,18 @@ export class AudioEngine {
     return ctx.resume();
   }
 
+  // صمت متعمّد قبل الأحداث الكبيرة: بنوطّي كل شي شوي وبنرجّعه
+  duck(seconds = 2, depth = 0.12) {
+    if (!this.ctx) return;
+    const g = this.master.gain;
+    const t = this.now;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0.9 * depth, t + 0.4);
+    g.setValueAtTime(0.9 * depth, t + seconds);
+    g.linearRampToValueAtTime(0.9, t + seconds + 0.15);
+  }
+
   // نسخة من صوت اللعبة كـ MediaStream (لتسجيل الفيديو)
   tap() {
     if (!this.tapNode) {

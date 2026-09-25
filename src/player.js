@@ -49,6 +49,10 @@ export class Player {
     this.flashlightOn = true;
     this.hidden = null; // المخبأ الحالي
     this.frozen = 0; // ثواني ما بتقدر تتحرّك فيها (عم تطلع عالخزان)
+    this.lean = 0; // ميلان من ورا الزاوية: -1 شمال، 1 يمين
+    this.leanOff = new THREE.Vector3();
+    this.dangerDist = Infinity; // قدّيش السعلوة قريبة (الكشاف بيرمش)
+    this.flashOut = 0; // الكشاف ميّت مؤقتاً (هي طفّت الضو)
     this.blockTiles = null; // الأبواب المسكّرة
     this.holdingBreath = false;
     this.matchT = 0; // عود كبريت مولّع (ثواني)
@@ -87,8 +91,13 @@ export class Player {
 
   // مصدر الضوء اللي بتشوفه السعلوة
   get light() {
-    if (this.flashlightOn && this.battery > 0) return 'flash';
+    if (this.flashlightOn && this.battery > 0 && this.flashOut <= 0) return 'flash';
     return this.matchT > 0 ? 'match' : null;
+  }
+
+  // مكان الراس (مع الميلان)
+  get head() {
+    return { x: this.pos.x + this.leanOff.x, z: this.pos.z + this.leanOff.z };
   }
 
   lightMatch(seconds = 25) {
@@ -119,9 +128,11 @@ export class Player {
   // بترجع معلومات الحركة لهالإطار
   update(dt, keys, fear) {
     const out = { moving: false, sprinting: false, step: false, pant: false };
-    let lightTarget = this.flashlightOn && this.battery > 0 ? FLASH : 0;
-    // الكشاف بيرمش لما البطارية ضعيفة
+    this.flashOut = Math.max(0, this.flashOut - dt);
+    let lightTarget = this.flashlightOn && this.battery > 0 && this.flashOut <= 0 ? FLASH : 0;
+    // الكشاف بيرمش لما البطارية ضعيفة، ولما هي قريبة (إنذار)
     if (this.battery < 0.15 && Math.random() < 0.08) lightTarget *= 0.2;
+    if (this.dangerDist < 8 && Math.random() < 0.15 * (1 - this.dangerDist / 8)) lightTarget *= 0.1;
     if (this.flashlightOn && this.battery > 0) this.battery = Math.max(0, this.battery - dt / this.cfg.batterySeconds);
     this.spot.intensity = lightTarget * (0.4 + 0.6 * Math.min(1, this.battery * 4));
     this.glow.intensity = lightTarget ? 0.25 : 0;
@@ -150,6 +161,13 @@ export class Player {
       this.#applyCamera(dt, 0, fear);
       return out;
     }
+    // الميلان: Q شمال، R يمين (بس إذا في مكان للراس)
+    const leanWant = keys.KeyQ ? -1 : keys.KeyR ? 1 : 0;
+    this.lean += (leanWant - this.lean) * Math.min(1, dt * 8);
+    const fw0 = this.forward();
+    const side = new THREE.Vector3(-fw0.z, 0, fw0.x).multiplyScalar(this.lean * 0.5);
+    if (this.#solidAt(this.pos.x + side.x * 1.3, this.pos.z + side.z * 1.3)) side.multiplyScalar(0.2);
+    this.leanOff.lerp(side, 0.3);
     const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
     const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
     const moving = f !== 0 || s !== 0;
@@ -215,10 +233,12 @@ export class Player {
     // ارتجاف مع الخوف
     const shake = fear > 0.5 ? (Math.random() - 0.5) * 0.012 * fear : 0;
     const base = this.hidden ? this.hidden.pos : this.pos;
-    this.camera.position.set(base.x, THREE.MathUtils.lerp(this.camera.position.y || eye, eye + bob, 0.2), base.z);
+    const lo = this.hidden ? { x: 0, z: 0 } : this.leanOff;
+    this.camera.position.set(base.x + lo.x, THREE.MathUtils.lerp(this.camera.position.y || eye, eye + bob - Math.abs(this.lean) * 0.08, 0.2), base.z + lo.z);
     this.camera.rotation.set(0, 0, 0);
     this.camera.rotateY(this.yaw + shake);
     this.camera.rotateX(this.pitch + shake);
+    if (!this.hidden) this.camera.rotateZ(-this.lean * 0.14);
   }
 
   // الدخول للمخبأ: الكاميرا بتنحط جوّاه وبتطلّع على الغرفة

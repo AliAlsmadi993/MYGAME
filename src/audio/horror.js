@@ -303,6 +303,34 @@ export const horror = {
     n.connect(lp);
   },
 
+  // نغمة عود منخفضة ومشوّهة وقت الخطر (مقام حجاز)
+  oud(e, vol = 1) {
+    const ctx = e.ctx;
+    const t = e.now;
+    const semis = [0, 1, 4, 5, 7, 8, 10];
+    const f = 98 * Math.pow(2, semis[Math.floor(Math.random() * semis.length)] / 12);
+    const d = out(e, null, vol * 0.3, 0.7);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2400, t);
+    lp.frequency.exponentialRampToValueAtTime(300, t + 1.2);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(1, t + 0.008);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+    lp.connect(shaper(ctx, 4)).connect(env).connect(d);
+    // وتر مزدوج بفرق بسيط + انزلاق نازل (ريشة ثقيلة)
+    for (const det of [0.997, 1.004]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * det * 1.02, t);
+      o.frequency.exponentialRampToValueAtTime(f * det * 0.985, t + 1.5);
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + 2.3);
+    }
+  },
+
   // خطوات اللاعب حسب الأرضية
   step(e, surface, vol = 1) {
     const ctx = e.ctx;

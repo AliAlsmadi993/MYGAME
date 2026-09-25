@@ -94,7 +94,7 @@ export class Mic {
       if (dur < 0.6) return;
       const samples = new Float32Array(cap.chunks.length * BLOCK);
       cap.chunks.forEach((c, i) => samples.set(c, i * BLOCK));
-      this.onClip?.({ samples, sampleRate: rate, peak: cap.peak, kind: cap.peak > 2.2 ? 'scream' : 'talk' });
+      this.onClip?.({ samples, sampleRate: rate, peak: cap.peak, kind: classifyClip(samples, rate, cap.peak) });
     }
   }
 
@@ -121,6 +121,33 @@ export class Mic {
     onPhase?.('done');
     return { floor: this.floor, speech: this.speech };
   }
+}
+
+// تصنيف بسيط للمقطع (قسم 11): صرخة، ضحكة (نبضات متكررة)، نفَس (واطي وطويل)، أو كلام.
+// peak بنفس مقياس level (1 = كلام عادي)
+export function classifyClip(samples, rate, peak) {
+  if (peak > 2.2) return 'scream';
+  const win = Math.floor(rate * 0.05);
+  const env = [];
+  for (let i = 0; i + win <= samples.length; i += win) {
+    let s = 0;
+    for (let j = i; j < i + win; j++) s += samples[j] * samples[j];
+    env.push(Math.sqrt(s / win));
+  }
+  const max = Math.max(...env, 1e-9);
+  // نعدّ النبضات: صعود فوق 60% من الأعلى بعد نزول تحت 30%
+  let bursts = 0;
+  let low = true;
+  for (const v of env) {
+    if (low && v > max * 0.6) {
+      bursts++;
+      low = false;
+    } else if (v < max * 0.3) low = true;
+  }
+  const secs = samples.length / rate;
+  if (bursts >= 4 && bursts / secs >= 2.5) return 'laugh';
+  if (peak < 1 && bursts <= 2 && secs > 1) return 'breath';
+  return 'talk';
 }
 
 // تصنيف المستوى حسب جدول وثيقة التصميم (مدى السماع بالمتر ودقة التحديد)

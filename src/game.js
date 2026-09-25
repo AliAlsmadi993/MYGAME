@@ -66,7 +66,21 @@ export class Game {
         horror.sting(audio, this.audio.screamScale);
         const mp = this.monster.pos;
         setTimeout(() => horror.growl(audio, { x: mp.x, y: 2, z: mp.z }, 1), 300);
+        // الخوف العالي: شهقة غصب عنك بتكشف مكانك
+        const p = this.player;
+        if (this.audio.fear > 0.45 && !p.hidden && Math.random() < 0.6) {
+          setTimeout(() => {
+            if (this.state !== 'play') return;
+            this.audio.playAt('gasp');
+            this.#noise({ radius: 8, precision: 1 });
+          }, 250);
+        }
       }
+    };
+    // نزلت من السقف
+    this.monster.onDrop = (pos) => {
+      audio.playAt('slam', { x: pos.x, y: 0.3, z: pos.z }, 0.9);
+      horror.growl(audio, { x: pos.x, y: 1.5, z: pos.z }, 0.8);
     };
 
     this.time = 0;
@@ -130,6 +144,15 @@ export class Game {
       6,
     );
     if (this.sealed.size) setTimeout(() => this.ui.subtitle('في خزانة مسكّرة بمسامير… مين سكّرها؟', 'A wardrobe is nailed shut… who did that?', 4), 8000);
+    // البيت بيتذكّرك: صوتك من الليلة الماضية بيناديك من بعيد
+    const old = this.mem.attempts > 1 && this.mimic.persist && this.mimic.pick('talk');
+    if (old) {
+      setTimeout(() => {
+        if (this.state !== 'play') return;
+        const far = this.#randomRoomPos(1.5);
+        this.#playVoice(old, far, 0.15);
+      }, 14000);
+    }
   }
 
   get hour() {
@@ -503,6 +526,8 @@ export class Game {
         this.bag.take('matches');
         this.world.setCandle(t.candle, true);
         this.audio.playAt('match', null, 0.8);
+        // الضو الثابت بيجذبها للغرفة
+        setTimeout(() => this.state === 'play' && t.candle.lit && this.#noise({ x: t.candle.pos.x, z: t.candle.pos.z, radius: 20, precision: 3, fromPlayer: false }), 4000);
         break;
     }
   }
@@ -510,6 +535,11 @@ export class Game {
   #hide(spot) {
     const p = this.player;
     p.enterHide(spot);
+    // كانت مستنيتك جوّا!
+    if (this.monster.lurking?.id === spot.id) {
+      setTimeout(() => this.state === 'play' && this.#caught('hide', spot), 500);
+      return;
+    }
     p.hiddenFor = 0;
     this.stats.hideUses[spot.id] = (this.stats.hideUses[spot.id] || 0) + 1;
     if (spot.id === this.favHideAtStart) this.stats.usedFav = true;
@@ -859,7 +889,8 @@ export class Game {
     const t = pick(candidates);
     if (!t || !findPath(this.monster.tile(), t)) return;
     const c = tileCenter(t.x, t.y);
-    const clip = this.mimic.pick(this.hour > 3 ? 'scream' : 'talk');
+    // إذا بتصرّخ كثير: بتقلّد صرخاتك أكثر
+    const clip = this.mimic.pick(this.hour > 3 || this.mem.loudness > 0.6 || this.stats.screams > 2 ? 'scream' : 'talk');
     const distortion = Math.min(1, Math.max(0, (this.hour - 2) / 2.5));
     if (clip) {
       this.#playVoice(clip, { x: c.x, y: 1.5, z: c.z }, distortion);
@@ -897,8 +928,14 @@ export class Game {
   #scare() {
     const A = this.audio;
     const p = this.player.hidden ? this.player.hidden.pos : this.player.pos;
-    const id = pickScare({ phoneRinging: this.phone.ringing, radioOn: this.radio.on, hour: this.hour, hasClips: this.mimic.clips.length > 0 });
+    // لاعب هادي كثير: بتحاول تفاجئه ليطلّع صوت
+    const quiet = this.time > 150 && this.stats.heard < 3 && this.mem.loudness < 0.4;
+    const id = quiet && Math.random() < 0.4 ? 'appear' : pickScare({ phoneRinging: this.phone.ringing, radioOn: this.radio.on, hour: this.hour, hasClips: this.mimic.clips.length > 0 });
     switch (id) {
+      case 'appear':
+        A.duck(1.6);
+        setTimeout(() => this.#apparition(1.3, true), 1600);
+        break;
       case 'door': {
         const doors = doorTiles().filter((t) => {
           const c = tileCenter(t.x, t.y);
@@ -915,7 +952,7 @@ export class Game {
         break;
       }
       case 'ceiling':
-        // خطوات فوق السقف… ما في طابق فوق
+        // خطوات فوق السقف
         for (let i = 0; i < 6; i++) {
           setTimeout(() => A.playAt('mstep', { x: p.x - 3 + i * 1.2, y: 3.8, z: p.z + Math.sin(i) }, 0.9), i * 480);
         }
@@ -933,13 +970,55 @@ export class Game {
         for (let i = 0; i < 6; i++) setTimeout(() => horror.creak(A, c, 0.35), i * 900);
         break;
       }
-      case 'laugh':
-        A.playAt('laugh', this.#randomRoomPos(), 0.6);
+      case 'laugh': {
+        // ضحكتك القديمة مشوّهة وبطيئة، أو ضحكتها
+        const clip = this.mimic.clips.find((c) => c.kind === 'laugh');
+        if (clip) this.#playVoice(clip, this.#randomRoomPos(), 0.9);
+        else A.playAt('laugh', this.#randomRoomPos(), 0.6);
         break;
-      case 'whisper':
-        A.playAt('whisper', { x: p.x + 0.4, y: 1.6, z: p.z }, 0.5);
+      }
+      case 'whisper': {
+        const clip = this.mimic.clips.find((c) => c.kind === 'breath');
+        const pos = { x: p.x + 0.4, y: 1.6, z: p.z };
+        if (clip) this.#playVoice(clip, pos, 0.5);
+        else A.playAt('whisper', pos, 0.5);
         break;
+      }
     }
+  }
+
+  // طيف إلها بمكان بتشوفه (مش هي الحقيقية): بالبرق أو لتخوّف اللاعب الهادي
+  #apparition(seconds, loud) {
+    if (this.state !== 'play' || this.player.hidden || this.apparitionMesh) return false;
+    const cam = this.camera.position;
+    const fw = new THREE.Vector3();
+    this.camera.getWorldDirection(fw);
+    const mon = this.monster.pos;
+    const options = Object.keys(ROOMS).flatMap((r) => roomTiles(r)).filter((t) => {
+      const c = tileCenter(t.x, t.y);
+      const dx = c.x - cam.x;
+      const dz = c.z - cam.z;
+      const d = Math.hypot(dx, dz);
+      return d > 7 && d < 16 && (dx * fw.x + dz * fw.z) / d > 0.75 && Math.hypot(c.x - mon.x, c.z - mon.z) > 6 && lineOfSight(cam.x, cam.z, c.x, c.z, this.closed);
+    });
+    const t = pick(options);
+    if (!t) return false;
+    const c = tileCenter(t.x, t.y);
+    const mesh = buildBody();
+    mesh.position.set(c.x, 0, c.z);
+    mesh.rotation.y = Math.atan2(c.x - cam.x, c.z - cam.z);
+    animateBody(mesh, this.time, { moving: false, chase: false, searching: false });
+    this.scene.add(mesh);
+    this.apparitionMesh = mesh;
+    if (loud) {
+      horror.sting(this.audio, 0.8 * this.audio.screamScale);
+      setTimeout(() => this.audio.playAt('laugh', { ...c, y: 2 }, 0.5), 600);
+    }
+    setTimeout(() => {
+      this.scene.remove(mesh);
+      this.apparitionMesh = null;
+    }, seconds * 1000);
+    return true;
   }
 
   #direct(dt, fear) {
@@ -1134,7 +1213,19 @@ export class Game {
 
     // حبس النفَس (Space) جوّا المخبأ
     p.holdingBreath = !!(p.hidden && keys.Space && (p.holdingBreath || p.stamina > 0.1));
+    p.dangerDist = dist;
     const mv = p.update(dt, keys, this.audio.fear);
+    // الكشاف بوجهها
+    this.dazzleCd = (this.dazzleCd ?? 0) - dt;
+    if (p.light === 'flash' && !p.hidden && this.dazzleCd <= 0 && dist < 10 && !mon.lurking) {
+      const to = new THREE.Vector3(mon.pos.x, mon.pose === 'ceiling' ? 2.9 : 2.3, mon.pos.z).sub(this.camera.position);
+      const fwd0 = new THREE.Vector3();
+      this.camera.getWorldDirection(fwd0);
+      if (to.normalize().dot(fwd0) > 0.96 && lineOfSight(p.pos.x, p.pos.z, mon.pos.x, mon.pos.z, this.closed) && mon.dazzle(p.pos)) {
+        this.dazzleCd = 10;
+        this.audio.playAt('shriek', { x: mon.pos.x, y: 2, z: mon.pos.z }, 0.5);
+      }
+    }
     if (mv.gasp) {
       this.audio.playAt('gasp');
       this.#noise({ radius: 6, precision: 1 });
@@ -1224,6 +1315,7 @@ export class Game {
       this.chimeMask = 1.3 * Math.floor(hour) + 1;
       if (Math.floor(hour) === 3 && !this.climaxDone) {
         this.climaxDone = true;
+        setTimeout(() => this.audio.duck(2.3, 0.08), 1500);
         setTimeout(() => this.#climax(), 4000);
       }
     }
@@ -1255,13 +1347,21 @@ export class Game {
       }
     }
 
-    // بتطفي الشموع وهي ماشية
-    for (const c of this.world.candles) {
-      if (!c.lit || mon.state === 'chase' || Math.hypot(c.pos.x - mon.pos.x, c.pos.z - mon.pos.z) > 2.2 || (c.nextCheck ?? 0) > this.time) continue;
-      c.nextCheck = this.time + 30;
-      if (Math.random() < this.cfg.lightsOut) {
-        this.world.setCandle(c, false);
-        this.audio.playAt('whisper', c.pos, 0.4);
+    // لما تفوت على غرفة بتطفي كل ضوها مرة وحدة (والكشاف كمان إذا إنت فيها)
+    const mt = mon.tile();
+    const mroom = roomAt(mt.x, mt.y);
+    if (mroom && mroom !== this.monRoom) {
+      this.monRoom = mroom;
+      const lit = this.world.candles.filter((c) => c.lit && c.room === mroom);
+      if (lit.length && mon.state !== 'chase' && Math.random() < this.cfg.lightsOut) {
+        setTimeout(() => {
+          if (this.state !== 'play') return;
+          for (const c of lit) this.world.setCandle(c, false);
+          this.audio.playAt('whisper', lit[0].pos, 0.6);
+          horror.breath(this.audio, lit[0].pos, 1.2, false);
+          const now = this.player.tile();
+          if (roomAt(now.x, now.y) === mroom) this.player.flashOut = 2.5;
+        }, 900);
       }
     }
 
@@ -1372,10 +1472,20 @@ export class Game {
   // أصوات البيت: رعد وبرق، صرير، نقط مي، عواء، ونفَس السعلوة
   #ambient(dt, p, mon) {
     const A = this.audio;
+    // عود منخفض ومشوّه وقت الخطر
+    this.oudCd = (this.oudCd ?? 0) - dt;
+    if (A.fear > 0.55 && this.oudCd <= 0) {
+      this.oudCd = rand(1.6, 3.5);
+      horror.oud(A, A.fear);
+    }
     this.nextLightning -= dt;
     if (this.nextLightning <= 0) {
       this.nextLightning = rand(35, 80);
-      if (!this.settings.reduceFlashes) this.world.lightning();
+      if (!this.settings.reduceFlashes) {
+        this.world.lightning();
+        // البرق ممكن يكشفها واقفة بمكان ما بتتوقّعه
+        if (Math.random() < 0.35) this.#apparition(0.45, false);
+      }
       horror.thunder(A, rand(0.4, 1.6), rand(0.7, 1));
     }
     this.nextCreak -= dt;
