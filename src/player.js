@@ -53,6 +53,7 @@ export class Player {
     this.leanOff = new THREE.Vector3();
     this.dangerDist = Infinity; // قدّيش السعلوة قريبة (الكشاف بيرمش)
     this.flashOut = 0; // الكشاف ميّت مؤقتاً (هي طفّت الضو)
+    this.shakeOn = true; // إعداد ارتجاف الصورة
     this.blockTiles = null; // الأبواب المسكّرة
     this.holdingBreath = false;
     this.matchT = 0; // عود كبريت مولّع (ثواني)
@@ -162,16 +163,16 @@ export class Player {
       return out;
     }
     // الميلان: Q شمال، R يمين (بس إذا في مكان للراس)
-    const leanWant = keys.KeyQ ? -1 : keys.KeyR ? 1 : 0;
+    const leanWant = keys.leanLeft ? -1 : keys.leanRight ? 1 : 0;
     this.lean += (leanWant - this.lean) * Math.min(1, dt * 8);
     const fw0 = this.forward();
     const side = new THREE.Vector3(-fw0.z, 0, fw0.x).multiplyScalar(this.lean * 0.5);
     if (this.#solidAt(this.pos.x + side.x * 1.3, this.pos.z + side.z * 1.3)) side.multiplyScalar(0.2);
     this.leanOff.lerp(side, 0.3);
-    const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
-    const s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    const f = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
+    const s = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     const moving = f !== 0 || s !== 0;
-    const wantSprint = keys.ShiftLeft || keys.ShiftRight;
+    const wantSprint = keys.sprint;
     const sprint = moving && wantSprint && !this.crouch && !this.exhausted;
     let speed = this.crouch ? 1.3 : sprint ? 5 : 2.6;
     if (this.exhausted) speed *= 0.8;
@@ -229,9 +230,9 @@ export class Player {
   #applyCamera(dt, speed, fear) {
     const eye = this.hidden ? this.hidden.eye : this.crouch ? CROUCH_EYE : EYE;
     this.bobT += dt * speed * 2.2;
-    const bob = Math.sin(this.bobT) * 0.04 * Math.min(1, speed / 2.6);
+    const bob = this.shakeOn ? Math.sin(this.bobT) * 0.04 * Math.min(1, speed / 2.6) : 0;
     // ارتجاف مع الخوف
-    const shake = fear > 0.5 ? (Math.random() - 0.5) * 0.012 * fear : 0;
+    const shake = fear > 0.5 && this.shakeOn ? (Math.random() - 0.5) * 0.012 * fear : 0;
     const base = this.hidden ? this.hidden.pos : this.pos;
     const lo = this.hidden ? { x: 0, z: 0 } : this.leanOff;
     this.camera.position.set(base.x + lo.x, THREE.MathUtils.lerp(this.camera.position.y || eye, eye + bob - Math.abs(this.lean) * 0.08, 0.2), base.z + lo.z);

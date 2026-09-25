@@ -125,6 +125,8 @@ export class Game {
     this.#setupDoors();
     this.glass = new Set(GLASS.map((g) => `${g.x},${g.y}`));
     this.nextHouseScare = 10;
+    this.capCd = {};
+    audio.onSound = (kind, pos) => this.#caption(kind, pos);
     this.vote = new Vote();
     this.voteT = VOTE_SECONDS;
     this.audienceOn = !!settings.twitch;
@@ -289,6 +291,35 @@ export class Game {
       }
     }
     this.monPrevTile = mt;
+  }
+
+  // ---------- ترجمة الأصوات المهمة (إمكانية الوصول) ----------
+  static CAPTIONS = {
+    slam: 'باب انصفق', creak: 'صرير', mstep: 'خطوات حافية', ring: 'تلفون عم يرن', toys: 'علبة موسيقى',
+    laugh: 'ضحكة', whisper: 'همس', glass: 'زجاج', teleport: 'سحبة غريبة', shriek: 'صرخة', knock: 'دقّ',
+    bell: 'جرس', breath: 'نفَس', sing: 'غنا', growl: 'خرخرة', voice: 'صوتك', thunder: 'رعد', splash: 'مي',
+  };
+
+  #caption(kind, pos) {
+    const text = Game.CAPTIONS[kind];
+    if (!text || !this.settings.captions || this.state !== 'play') return;
+    if ((this.capCd[kind] ?? 0) > this.time) return;
+    this.capCd[kind] = this.time + 3;
+    let where = '';
+    if (pos) {
+      const cam = this.camera.position;
+      const dx = pos.x - cam.x;
+      const dz = pos.z - cam.z;
+      const d = Math.hypot(dx, dz);
+      if (kind === 'mstep' && d > 16) return;
+      const fw = new THREE.Vector3();
+      this.camera.getWorldDirection(fw);
+      const a = Math.atan2(fw.x * dz - fw.z * dx, fw.x * dx + fw.z * dz); // موجب = يمين
+      where = d < 1.5 ? 'جنبك' : Math.abs(a) < Math.PI / 4 ? 'قدّام' : Math.abs(a) > (3 * Math.PI) / 4 ? 'ورا' : a > 0 ? 'يمين' : 'شمال';
+      if ((pos.y ?? 0) > 3.2) where += '، فوق';
+      if (d > 14) where += '، بعيد';
+    }
+    this.ui.caption(`[${text}${where ? ` — ${where}` : ''}]`);
   }
 
   // ---------- الجمهور (تويتش) ----------
@@ -838,6 +869,7 @@ export class Game {
 
   // تشغيل تسجيل من صوت اللاعب. وضع الستريمر: تنبيه قبلها
   #playVoice(clip, pos, distortion) {
+    this.#caption('voice', pos);
     if (!this.settings.streamer) return this.mimic.play(clip, pos, distortion);
     this.ui.toast('⚠ تسجيل من صوتك');
     setTimeout(() => this.mimic.play(clip, pos, distortion), 1500);
@@ -1212,7 +1244,7 @@ export class Game {
     this.audio.fear += (fear - this.audio.fear) * Math.min(1, dt * 2);
 
     // حبس النفَس (Space) جوّا المخبأ
-    p.holdingBreath = !!(p.hidden && keys.Space && (p.holdingBreath || p.stamina > 0.1));
+    p.holdingBreath = !!(p.hidden && keys.breath && (p.holdingBreath || p.stamina > 0.1));
     p.dangerDist = dist;
     const mv = p.update(dt, keys, this.audio.fear);
     // الكشاف بوجهها
@@ -1407,8 +1439,8 @@ export class Game {
       hint: this.#interactTarget()?.label ?? '',
       hidden: p.hidden ? p.hidden.spot.kind : null,
       breath: p.holdingBreath,
-      showItems: this.cfg.hints === 'full' || keys.Tab,
-      showBars: this.cfg.hints !== 'none' || keys.Tab,
+      showItems: this.cfg.hints === 'full' || keys.items,
+      showBars: this.cfg.hints !== 'none' || keys.items,
       vote: this.audienceOn ? { tally: this.vote.tally(), left: Math.ceil(this.voteT) } : null,
     });
     this.post.render(dt, { fear: this.audio.fear, hidden: p.hidden ? 1 : 0 });
@@ -1510,6 +1542,14 @@ export class Game {
     if (ROOMS[roomAt(mt.x, mt.y)]?.creaky && mon.path?.length && this.monCreakCd <= 0) {
       this.monCreakCd = 1.1;
       horror.creak(A, { x: mon.pos.x, y: 0.1, z: mon.pos.z }, 0.9);
+      this.#caption('creak', mon.pos);
+    }
+    // غناها (للترجمة): كل فترة إذا كانت قريبة وعم تغني
+    this.singCapCd = (this.singCapCd ?? 5) - dt;
+    if (this.singCapCd <= 0) {
+      this.singCapCd = 10;
+      const singing = mon.state === 'wander' || mon.state === 'retreat' || mon.singBoost > 0;
+      if (singing && mon.pos.distanceTo(p.pos) < 18) this.#caption('sing', { x: mon.pos.x, y: 2, z: mon.pos.z });
     }
     // نفَسها: بتسمعه لما تكون قريبة
     this.breathCd -= dt;
@@ -1517,6 +1557,7 @@ export class Game {
     if (this.breathCd <= 0 && d < 12) {
       this.breathCd = this.inhale ? 1.2 : 1.6;
       horror.breath(A, { x: mon.pos.x, y: 2.3, z: mon.pos.z }, mon.state === 'chase' ? 1.4 : 1, this.inhale);
+      this.#caption('breath', { x: mon.pos.x, y: 2.3, z: mon.pos.z });
       this.inhale = !this.inhale;
       if (mon.state === 'chase' && Math.random() < 0.15) horror.growl(A, { x: mon.pos.x, y: 2, z: mon.pos.z }, 0.8);
     }

@@ -448,7 +448,7 @@ export class Monster {
       this.audio.movePanner(this.panner, { x: this.pos.x, y: this.pose === 'ceiling' ? WALL_H : 2.2, z: this.pos.z });
       // بتغني وهي تتجوّل، وبتسكت لما تصيد
       const singing = this.state === 'wander' || this.state === 'retreat' || this.singBoost > 0;
-      this.song.gain.setTargetAtTime(singing ? 0.8 : 0.05, this.audio.now, 0.4);
+      this.song.gain.setTargetAtTime((singing ? 0.8 : 0.05) * (this.audio.voiceLevel ?? 1), this.audio.now, 0.4);
     }
   }
 }

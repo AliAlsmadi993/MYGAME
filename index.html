@@ -53,8 +53,20 @@
         <button id="btnBook">📖 دفتر الجدة</button>
       </div>
 
-      <details class="box">
+      <details class="box" id="settingsBox">
         <summary>⚙️ الإعدادات</summary>
+        <h3>الصوت والصورة</h3>
+        <label>الصوت العام <input type="range" id="setVolMaster" min="0" max="1" step="0.05" /></label>
+        <label>صوت السعلوة وتسجيلاتك <input type="range" id="setVolVoice" min="0" max="1.5" step="0.05" /></label>
+        <label>الأجواء (ريح ومطر وهمهمة) <input type="range" id="setVolAmb" min="0" max="1.5" step="0.05" /></label>
+        <label>السطوع <input type="range" id="setBright" min="0.6" max="1.8" step="0.05" /></label>
+        <label><input type="checkbox" id="setGrain" /> حبيبات الفيلم</label>
+        <label><input type="checkbox" id="setShake" /> ارتجاف الصورة وهزّة المشي</label>
+        <label><input type="checkbox" id="setCaptions" /> ترجمة للأصوات المهمة (مثل [باب انصفق — يمين])</label>
+        <h3>الأزرار</h3>
+        <div id="keyBinds" class="keys"></div>
+        <button id="btnKeysReset" class="ghost">رجّع الأزرار الافتراضية</button>
+        <h3>عام</h3>
         <label>حساسية الماوس <input type="range" id="setSens" min="0.3" max="2.5" step="0.1" /></label>
         <label><input type="checkbox" id="setInvert" /> اعكس المحور العمودي</label>
         <label><input type="checkbox" id="setFlash" /> قلّل الومضات (بدون برق)</label>
@@ -108,8 +120,13 @@
 
     <section id="pause" class="screen hidden">
       <h2>موقّفة</h2>
-      <p>اكبس بأي مكان لتكمّل</p>
       <p class="small">هي كمان مستنية…</p>
+      <div class="row">
+        <button id="btnResume" class="big">كمّل</button>
+        <button id="btnPauseSettings">⚙️ الإعدادات</button>
+        <button id="btnQuit" class="ghost">اترك الليلة (القائمة)</button>
+      </div>
+      <div id="pauseSettings"></div>
     </section>
 
     <section id="end" class="screen hidden">
@@ -149,6 +166,7 @@
       <div id="dbg"></div>
     </div>
     <div id="subs"></div>
+    <div id="caps"></div>
     <div id="toasts"></div>
     <div id="fade"></div>
 

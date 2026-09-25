@@ -13,6 +13,8 @@ import { ENDINGS } from './story/endings.js';
 import { TOOLS } from './inventory.js';
 import { ITEMS } from './world/map.js';
 import { Clipper } from './clipper.js';
+import { createMenuScene } from './menuScene.js';
+import { KEY_ACTIONS, buildKeymap, keyLabel } from './keymap.js';
 import { TwitchChat, ACTIONS } from './audience.js';
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +32,7 @@ renderer.toneMappingExposure = 1.15;
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  menuScene?.resize(innerWidth, innerHeight);
   if (game) {
     game.camera.aspect = innerWidth / innerHeight;
     game.camera.updateProjectionMatrix();
@@ -37,6 +40,7 @@ function resize() {
   }
 }
 
+const menuScene = createMenuScene(renderer);
 const audio = new AudioEngine();
 const mic = new Mic(audio);
 const mimic = new Mimic(audio);
@@ -97,6 +101,13 @@ const ui = {
     $('breath').classList.toggle('hidden', !h.breath);
     $('vote').classList.toggle('hidden', !h.vote);
     if (h.vote) $('vote').textContent = `🗳 ${Object.entries(h.vote.tally).map(([a, n]) => `${ACTIONS[a].cmd} ${n}`).join(' · ')} (${h.vote.left})`;
+  },
+  caption(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    $('caps').append(d);
+    while ($('caps').children.length > 3) $('caps').firstChild.remove();
+    setTimeout(() => d.remove(), 3500);
   },
   fade(on) {
     $('fade').classList.toggle('on', on);
@@ -268,6 +279,12 @@ function applySettings() {
   }
   $('micBar').style.display = settings.showMic ? '' : 'none';
   mic.gain = settings.micGain;
+  audio.setVolumes(settings);
+  renderer.toneMappingExposure = 1.15 * settings.brightness;
+  if (game) {
+    game.player.shakeOn = settings.shake;
+    game.post.uniforms.grain.value = settings.grain ? 1 : 0;
+  }
 }
 // تغيير جهاز المايك أو إعادة المعايرة: بنطفيه وبيرجع يتعاير ببداية الليلة الجاية
 const resetMic = (msg) => {
@@ -302,6 +319,38 @@ bindSetting('setMicGain', 'micGain', 'value', Number);
 bindSetting('setVoice', 'voiceLang', 'value');
 bindSetting('setDialect', 'dialect', 'value');
 bindSetting('setClip', 'clip');
+bindSetting('setVolMaster', 'volMaster', 'value', Number);
+bindSetting('setVolVoice', 'volVoice', 'value', Number);
+bindSetting('setVolAmb', 'volAmb', 'value', Number);
+bindSetting('setBright', 'brightness', 'value', Number);
+bindSetting('setGrain', 'grain');
+bindSetting('setShake', 'shake');
+bindSetting('setCaptions', 'captions');
+
+// تغيير الأزرار: كبسة على الفعل، وبعدين الزر الجديد (Esc يلغي)
+let keymap = buildKeymap(settings.keys);
+let rebinding = null;
+function renderKeys() {
+  $('keyBinds').innerHTML = '';
+  for (const [action, a] of Object.entries(KEY_ACTIONS)) {
+    const b = document.createElement('button');
+    const code = settings.keys[action] || a.key;
+    b.textContent = rebinding === action ? `${a.ar}: اكبس زر…` : `${a.ar}: ${keyLabel(code)}`;
+    b.classList.toggle('on', rebinding === action);
+    b.onclick = () => {
+      rebinding = action;
+      renderKeys();
+    };
+    $('keyBinds').append(b);
+  }
+}
+$('btnKeysReset').onclick = () => {
+  settings.keys = {};
+  saveSettings(settings);
+  keymap = buildKeymap(settings.keys);
+  renderKeys();
+};
+renderKeys();
 bindSetting('setTwitch', 'twitch', 'value', (v) => v.trim());
 bindSetting('setMicDevice', 'micDevice', 'value');
 $('setMicDevice').addEventListener('input', () => resetMic('رح نشغّل المايك الجديد ونعايره بالليلة الجاية.'));
@@ -380,6 +429,7 @@ async function startNight() {
   }
   const cfg = { ...nightConfig(DIFFICULTIES[difficulty], night), id: difficulty };
   game = new Game({ renderer, audio, mic, mimic, cfg, mem, progress, settings, ui });
+  applySettings();
   window.__game = game;
   resize();
   show(null);
@@ -409,22 +459,37 @@ function resetScene() {
 
 // ---------- الإدخال ----------
 addEventListener('keydown', (e) => {
-  keys[e.code] = true;
+  if (rebinding) {
+    e.preventDefault();
+    if (e.code !== 'Escape') {
+      settings.keys[rebinding] = e.code;
+      saveSettings(settings);
+      keymap = buildKeymap(settings.keys);
+    }
+    rebinding = null;
+    renderKeys();
+    return;
+  }
+  const action = keymap.get(e.code);
+  if (action) keys[action] = true;
   if (!game || game.state !== 'play') return;
-  if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  if (action === 'items' || action === 'breath' || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
   if (e.repeat) return;
-  if (e.code === 'KeyE') game.interact();
-  if (e.code === 'KeyF') game.toggleFlashlight();
-  if (e.code === 'KeyC') game.player.crouch = !game.player.crouch;
-  if (e.code === 'KeyG') game.useTool();
-  if (e.code === 'KeyX') game.dropTool();
+  if (action === 'interact') game.interact();
+  if (action === 'flashlight') game.toggleFlashlight();
+  if (action === 'crouch') game.player.crouch = !game.player.crouch;
+  if (action === 'use') game.useTool();
+  if (action === 'drop') game.dropTool();
   const digit = /^Digit([1-4])$/.exec(e.code);
   if (digit) game.bag.select(Number(digit[1]) - 1);
 });
 addEventListener('wheel', (e) => {
   if (game?.state === 'play' && document.pointerLockElement === canvas) game.bag.cycle(e.deltaY > 0 ? 1 : -1);
 });
-addEventListener('keyup', (e) => (keys[e.code] = false));
+addEventListener('keyup', (e) => {
+  const action = keymap.get(e.code);
+  if (action) keys[action] = false;
+});
 addEventListener('mousemove', (e) => {
   if (game && document.pointerLockElement === canvas) game.player.look(e.movementX, e.movementY);
 });
@@ -434,13 +499,29 @@ canvas.addEventListener('mousedown', (e) => {
   if (document.pointerLockElement !== canvas) return canvas.requestPointerLock?.();
   if (e.button === 2) game.useTool();
 });
-$('pause').onclick = () => canvas.requestPointerLock?.();
+// شاشة الإيقاف: كمّل، الإعدادات (نفس صندوق القائمة بينتقل لهون)، أو اترك الليلة
+const settingsHome = { parent: $('settingsBox').parentNode, next: $('settingsBox').nextSibling };
+const settingsBackHome = () => settingsHome.parent.insertBefore($('settingsBox'), settingsHome.next);
+$('btnResume').onclick = () => canvas.requestPointerLock?.();
+$('btnPauseSettings').onclick = () => {
+  $('pauseSettings').append($('settingsBox'));
+  $('settingsBox').open = true;
+};
+$('btnQuit').onclick = () => {
+  paused = false;
+  $('pause').classList.add('hidden');
+  settingsBackHome();
+  resetScene();
+  renderNights();
+  show('menu');
+};
 document.addEventListener('pointerlockchange', () => {
   if (!game || game.state !== 'play') return;
   const locked = document.pointerLockElement === canvas;
   paused = !locked && !params.has('nolock');
   $('pause').classList.toggle('hidden', !paused);
   if (paused) for (const k in keys) keys[k] = false;
+  else settingsBackHome();
 });
 
 // ---------- الحلقة ----------
@@ -449,6 +530,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (game && !paused) game.update(dt, keys);
+  else if (!game) menuScene.render(dt);
   requestAnimationFrame(frame);
 }
 addEventListener('resize', resize);

@@ -371,7 +371,7 @@ export function drone(e) {
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass';
   lp.frequency.value = 180;
-  g.connect(e.master);
+  g.connect(e.amb ?? e.master);
   lp.connect(g);
   for (const f of [41, 43.3, 61.7, 82.4]) {
     const o = ctx.createOscillator();

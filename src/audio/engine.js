@@ -6,6 +6,19 @@ export class AudioEngine {
     this.ctx = null;
     this.speaking = false; // لما السعلوة بتحكي أو بتقلّد: نسكّر أذن المايك حتى ما تسمع حالها
     this.screamScale = 1; // إعداد "تقليل الصراخ المفاجئ"
+    this.masterLevel = 0.9;
+    this.voiceLevel = 1; // صوت السعلوة وتسجيلات اللاعب
+    this.onSound = null; // (kind, pos) لترجمة الأصوات
+  }
+
+  // مستويات الصوت من الإعدادات
+  setVolumes({ volMaster = 1, volVoice = 1, volAmb = 1 } = {}) {
+    this.masterLevel = 0.9 * volMaster;
+    this.voiceLevel = volVoice;
+    this.ambLevel = volAmb;
+    if (!this.ctx) return;
+    this.master.gain.setTargetAtTime(this.masterLevel, this.now, 0.05);
+    this.amb.gain.setTargetAtTime(volAmb, this.now, 0.05);
   }
 
   start() {
@@ -19,6 +32,11 @@ export class AudioEngine {
     comp.ratio.value = 8;
     this.master.connect(comp).connect(ctx.destination);
     this.out = comp;
+    this.master.gain.value = this.masterLevel;
+    // الأجواء (ريح، مطر، همهمة) إلها مستوى لحالها
+    this.amb = ctx.createGain();
+    this.amb.gain.value = this.ambLevel ?? 1;
+    this.amb.connect(this.master);
     this.noise = this.#noiseBuffer(3);
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.#impulse(2.6, 2.5);
@@ -36,9 +54,9 @@ export class AudioEngine {
     const t = this.now;
     g.cancelScheduledValues(t);
     g.setValueAtTime(g.value, t);
-    g.linearRampToValueAtTime(0.9 * depth, t + 0.4);
-    g.setValueAtTime(0.9 * depth, t + seconds);
-    g.linearRampToValueAtTime(0.9, t + seconds + 0.15);
+    g.linearRampToValueAtTime(this.masterLevel * depth, t + 0.4);
+    g.setValueAtTime(this.masterLevel * depth, t + seconds);
+    g.linearRampToValueAtTime(this.masterLevel, t + seconds + 0.15);
   }
 
   // نسخة من صوت اللعبة كـ MediaStream (لتسجيل الفيديو)
@@ -93,14 +111,14 @@ export class AudioEngine {
     lfo.connect(lfoGain).connect(bp.frequency);
     const wg = ctx.createGain();
     wg.gain.value = 0.12;
-    wind.connect(bp).connect(wg).connect(this.master);
+    wind.connect(bp).connect(wg).connect(this.amb);
     const rain = this.#noiseSrc();
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 3000;
     const rg = ctx.createGain();
     rg.gain.value = 0.025;
-    rain.connect(hp).connect(rg).connect(this.master);
+    rain.connect(hp).connect(rg).connect(this.amb);
     wind.start();
     rain.start();
     lfo.start();
@@ -178,6 +196,7 @@ export class AudioEngine {
   // أصوات لحظية بمكان معيّن
   playAt(kind, pos, vol = 1) {
     if (!this.ctx) return;
+    this.onSound?.(kind, pos);
     const h = { shriek: 'scream', laugh: 'laugh', whisper: 'whisper', growl: 'growl', creak: 'creak', drip: 'drip' }[kind];
     if (kind === 'shriek') vol *= this.screamScale;
     if (h) return horror[h](this, pos, vol);
@@ -475,7 +494,7 @@ export class AudioEngine {
     if (v) u.voice = v;
     u.pitch = pitch;
     u.rate = rate;
-    u.volume = volume;
+    u.volume = Math.min(1, volume * this.voiceLevel);
     this.speaking = true;
     u.onend = u.onerror = () => (this.speaking = false);
     synth.cancel();

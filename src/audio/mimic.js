@@ -86,7 +86,7 @@ export class Mimic {
     }
     shaper.curve = curve;
     const gain = ctx.createGain();
-    gain.gain.value = 2.2;
+    gain.gain.value = 2.2 * (e.voiceLevel ?? 1);
     const wet = ctx.createGain();
     wet.gain.value = 0.3 + distortion * 0.5;
     const pan = e.panner(pos);

@@ -89,3 +89,17 @@ test('leaning out from a corner exposes your head', () => {
   const leaning = player(2, 3, { light: 'flash', head: { x: d.x, z: d.z } });
   assert.equal(mon.canSee(leaning), true);
 });
+
+test('key bindings can be changed and keep the fixed alternates', async () => {
+  const { buildKeymap, KEY_ACTIONS, keyLabel } = await import('../src/keymap.js');
+  const def = buildKeymap();
+  assert.equal(def.get('KeyW'), 'forward');
+  assert.equal(def.get('ArrowUp'), 'forward');
+  assert.equal(def.get('Space'), 'breath');
+  const custom = buildKeymap({ interact: 'KeyT', breath: 'KeyB' });
+  assert.equal(custom.get('KeyT'), 'interact');
+  assert.equal(custom.get('KeyE'), undefined);
+  assert.equal(custom.get('KeyB'), 'breath');
+  assert.equal(new Set(Object.values(KEY_ACTIONS).map((a) => a.key)).size, Object.keys(KEY_ACTIONS).length, 'no duplicate defaults');
+  assert.equal(keyLabel('KeyQ'), 'Q');
+});

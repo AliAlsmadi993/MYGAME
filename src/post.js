@@ -13,13 +13,14 @@ const HorrorShader = {
     fear: { value: 0 },
     hit: { value: 0 },
     hidden: { value: 0 },
+    grain: { value: 1 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float time, fear, hit, hidden;
+    uniform float time, fear, hit, hidden, grain;
     varying vec2 vUv;
     float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
     void main() {
@@ -44,7 +45,7 @@ const HorrorShader = {
       col *= vig;
       // حبيبات فيلم
       float g = rand(uv * vec2(1920.0, 1080.0) + fract(time) * 100.0) - 0.5;
-      col += g * (0.06 + fear * 0.04);
+      col += g * (0.06 + fear * 0.04) * grain;
       // خطوط خفيفة وقت الإمساك
       col *= 1.0 - hit * 0.3 * step(0.5, fract(uv.y * 240.0 + time * 40.0));
       gl_FragColor = vec4(col, 1.0);

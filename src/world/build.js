@@ -60,6 +60,101 @@ function webTexture() {
   return t;
 }
 
+// مشربية: شبكة خشب بفتحات دائرية ومعيّنات (الشفاف بيتقص بـ alphaTest)
+function mashrabiyaTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, 256, 256);
+  g.globalCompositeOperation = 'destination-out';
+  const n = 8;
+  const s = 256 / n;
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) {
+      g.beginPath();
+      g.arc(i * s + s / 2, j * s + s / 2, s * 0.32, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.moveTo(i * s, j * s - s * 0.12);
+      g.lineTo(i * s + s * 0.12, j * s);
+      g.lineTo(i * s, j * s + s * 0.12);
+      g.lineTo(i * s - s * 0.12, j * s);
+      g.fill();
+    }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// صورة عائلية قديمة بالأبيض والأسود (بني باهت)
+function familyPhoto(seed, withHer) {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = withHer ? 196 : 320;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(c.width / 2, c.height / 2, 10, c.width / 2, c.height / 2, c.width);
+  grd.addColorStop(0, '#b8a888');
+  grd.addColorStop(1, '#4a4034');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, c.width, c.height);
+  const person = (x, base, h, dark) => {
+    g.fillStyle = dark;
+    g.beginPath();
+    g.arc(x, base - h, h * 0.13, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.moveTo(x - h * 0.16, base);
+    g.lineTo(x - h * 0.12, base - h * 0.82);
+    g.lineTo(x + h * 0.12, base - h * 0.82);
+    g.lineTo(x + h * 0.16, base);
+    g.fill();
+  };
+  const n = withHer ? 3 : 1 + (seed % 3);
+  for (let i = 0; i < n; i++) person(c.width * ((i + 1) / (n + 1)) - (withHer ? 30 : 0), c.height - 10, withHer ? 110 : 160 - i * 20, '#2a241d');
+  if (withHer) {
+    // المرأة الطويلة: أعلى من الكل، شعرها نازل ووجهها مش باين
+    const x = c.width - 38;
+    person(x, c.height - 6, 178, '#0e0c0a');
+    g.fillStyle = '#0a0806';
+    g.fillRect(x - 16, c.height - 190, 32, 70);
+  }
+  // خدوش وبقع
+  for (let i = 0; i < 60; i++) {
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? '255,250,230' : '20,15,10'},${Math.random() * 0.25})`;
+    g.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random() * 2, Math.random() * 30);
+  }
+  return c;
+}
+
+// لوحة خط عربي (أمثال وشعر، بدون نصوص دينية)
+function calligraphy(text) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 240;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d9c9a3';
+  g.fillRect(0, 0, 512, 240);
+  g.strokeStyle = '#6a4a22';
+  g.lineWidth = 6;
+  g.strokeRect(14, 14, 484, 212);
+  g.lineWidth = 2;
+  g.strokeRect(26, 26, 460, 188);
+  g.fillStyle = '#2a1a0a';
+  g.direction = 'rtl';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `bold ${text.length > 16 ? 44 : 60}px Amiri, 'Noto Naskh Arabic', serif`;
+  g.fillText(text, 256, 122);
+  for (let i = 0; i < 80; i++) {
+    g.fillStyle = `rgba(90,60,20,${Math.random() * 0.15})`;
+    g.beginPath();
+    g.arc(Math.random() * 512, Math.random() * 240, Math.random() * 8, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
 export function buildWorld(scene) {
   const M = materials();
   scene.background = new THREE.Color(0x010102);
@@ -379,12 +474,23 @@ export function buildWorld(scene) {
     { x: 3, y: 0, dir: [0, 1] }, { x: 11, y: 0, dir: [0, 1] }, { x: 20, y: 0, dir: [0, 1] },
     { x: 0, y: 8, dir: [1, 0] }, { x: 0, y: 14, dir: [1, 0] }, { x: 24, y: 8, dir: [-1, 0] },
   ];
-  for (const w of windows) {
+  const lattice = new THREE.MeshStandardMaterial({ map: mashrabiyaTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9, color: 0x8a6a4a });
+  for (const [i, w] of windows.entries()) {
     const p = C(w.x, w.y);
     const ry = w.dir[0] ? Math.PI / 2 : 0;
     const fx = p.x + w.dir[0] * (TILE / 2 + 0.01);
     const fz = p.z + w.dir[1] * (TILE / 2 + 0.01);
-    scene.add(mesh(new THREE.PlaneGeometry(0.9, 1.2), glass, fx, 1.8, fz, { ry: ry + (w.dir[0] < 0 || w.dir[1] < 0 ? Math.PI : 0), cast: false }));
+    const face = ry + (w.dir[0] < 0 || w.dir[1] < 0 ? Math.PI : 0);
+    scene.add(mesh(new THREE.PlaneGeometry(0.9, 1.2), glass, fx, 1.8, fz, { ry: face, cast: false }));
+    // مشربية خشب مزخرفة بنص الشبابيك، والباقي شبك حديد
+    if (i % 2 === 0) {
+      const lm = mesh(new THREE.PlaneGeometry(1.0, 1.3), lattice, fx + w.dir[0] * 0.06, 1.8, fz + w.dir[1] * 0.06, { ry: face });
+      lm.castShadow = true;
+      scene.add(lm);
+      const frame = new THREE.BoxGeometry(w.dir[1] ? 1.1 : 0.12, 0.1, w.dir[0] ? 1.1 : 0.12);
+      for (const h of [1.12, 2.48]) scene.add(mesh(frame, M.woodDark, fx + w.dir[0] * 0.06, h, fz + w.dir[1] * 0.06));
+      continue;
+    }
     // شبك حديد وخشب
     for (const o of [-0.3, 0, 0.3]) {
       const bar = new THREE.BoxGeometry(0.04, 1.25, 0.04);
@@ -393,6 +499,28 @@ export function buildWorld(scene) {
     const frame = new THREE.BoxGeometry(w.dir[1] ? 1.1 : 0.12, 0.1, w.dir[0] ? 1.1 : 0.12);
     for (const h of [1.15, 2.45]) scene.add(mesh(frame, M.woodDark, fx + w.dir[0] * 0.04, h, fz + w.dir[1] * 0.04));
   }
+
+  // ---------- على الحيطان: صور عائلية وخط عربي ----------
+  // (tx,ty) خانة حيط، dir باتجاه الغرفة
+  const onWall = (tx, ty, dir, w, h, mat, y = 1.7) => {
+    const p = C(tx, ty);
+    const ry = Math.atan2(dir[0], dir[1]);
+    const x = p.x + dir[0] * (TILE / 2 + 0.03);
+    const z = p.z + dir[1] * (TILE / 2 + 0.03);
+    scene.add(mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.03), M.woodDark, x - dir[0] * 0.015, y, z - dir[1] * 0.015, { ry, cast: false }));
+    scene.add(mesh(new THREE.PlaneGeometry(w, h), mat, x + dir[0] * 0.002, y, z + dir[1] * 0.002, { ry, cast: false }));
+  };
+  const texMat = (canvas) => {
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 });
+  };
+  onWall(0, 7, [1, 0], 0.4, 0.5, texMat(familyPhoto(1, false)));
+  onWall(0, 9, [1, 0], 0.55, 0.42, texMat(familyPhoto(2, true)), 1.8); // الجدة شابة… ومعها امرأة طويلة
+  onWall(18, 0, [0, 1], 0.36, 0.46, texMat(familyPhoto(3, false)));
+  onWall(9, 0, [0, 1], 0.9, 0.42, texMat(calligraphy('الصبر مفتاح الفرج')), 2.0);
+  onWall(13, 0, [0, 1], 0.9, 0.42, texMat(calligraphy('أهلاً وسهلاً')), 2.0);
+  onWall(9, 17, [0, -1], 1.0, 0.45, texMat(calligraphy('يا دارُ ما فعلتْ بكِ الأيامُ')), 2.1);
 
   // ---------- البوابة ----------
   const gp = C(GATE.x, GATE.y);

@@ -14,6 +14,14 @@ export const DEFAULT_SETTINGS = {
   dialect: 'levant', // لهجتها: levant | gulf | iraq | egypt
   clip: false, // احفظ آخر لحظات قبل الموت كفيديو
   twitch: '', // قناة تويتش لتصويت الجمهور (فاضي = مطفي)
+  volMaster: 1,
+  volVoice: 1,
+  volAmb: 1,
+  brightness: 1,
+  grain: true,
+  shake: true,
+  captions: false,
+  keys: {}, // أزرار مخصّصة: { فعل: code }
 };
 
 export function loadSettings(storage = globalThis.localStorage) {
