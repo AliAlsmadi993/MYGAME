@@ -9,7 +9,8 @@
     "test": "node --test test/*.test.js",
     "build:play": "node scripts/embed-sounds.mjs && vite build --mode single && cp dist-single/index.html play.html",
     "build:demo": "vite build --mode demo",
-    "build:desktop": "node scripts/embed-sounds.mjs && vite build --mode single && mkdir -p desktop/app && cp dist-single/index.html desktop/app/index.html"
+    "build:desktop": "node scripts/embed-sounds.mjs && vite build --mode single && mkdir -p desktop/app && cp dist-single/index.html desktop/app/index.html",
+    "deploy": "bash scripts/deploy.sh"
   },
   "repository": {
     "type": "git",
@@ -20,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/AliAlsmadi993/MYGAME/issues"
   },
-  "homepage": "https://github.com/AliAlsmadi993/MYGAME#readme",
+  "homepage": "https://alialsmadi993.github.io/MYGAME/",
   "dependencies": {
     "three": "^0.186.0"
   },

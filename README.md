@@ -4,6 +4,12 @@
 
 وثيقة التصميم الكاملة: [GDD.md](GDD.md)
 
+## العب أونلاين
+
+**https://alialsmadi993.github.io/MYGAME/** (Chrome أو Edge، بالسماعات)
+
+لإعادة النشر بعد أي تعديل: `npm run deploy`
+
 ## أسهل طريقة للعب
 
 نزّل الملف **`play.html`** وافتحه بدبل كليك (Chrome أو Edge). ما بيحتاج تثبيت ولا سيرفر.
